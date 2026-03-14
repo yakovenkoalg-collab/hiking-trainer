@@ -1,0 +1,12 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="512" height="512" viewBox="0 0 512 512">
+  <rect width="512" height="512" rx="96" fill="#1b4332"/>
+  <path d="M80 400 L200 180 L260 260 L320 200 L432 400 Z" fill="#2d6a4f" stroke="#52b788" stroke-width="4"/>
+  <path d="M140 400 L220 240 L260 300 L300 250 L372 400 Z" fill="#40916c"/>
+  <circle cx="360" cy="120" r="36" fill="#e9c46a" opacity=".9"/>
+  <circle cx="256" cy="180" r="16" fill="#fff"/>
+  <path d="M256 196 v40" stroke="#fff" stroke-width="6" stroke-linecap="round"/>
+  <path d="M240 212 L256 220 L272 212" stroke="#fff" stroke-width="5" fill="none" stroke-linecap="round"/>
+  <path d="M244 236 L256 252 L268 236" stroke="#fff" stroke-width="5" fill="none" stroke-linecap="round"/>
+  <text x="256" y="340" text-anchor="middle" fill="#fff" font-family="sans-serif" font-weight="700" font-size="48">ТРЕНЕР</text>
+  <path d="M160 380 Q256 350 352 380" stroke="#52b788" stroke-width="3" fill="none" stroke-dasharray="8 4"/>
+</svg>
