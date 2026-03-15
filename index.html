@@ -2496,15 +2496,6 @@ navigate = function(screen, weekIdx, dayIdx) {
 loadState();
 render();
 
-// Mini-animation: toggle exercise images between frame 0 and 1
-setInterval(() => {
-  document.querySelectorAll('.ex-img img[data-frame]').forEach(img => {
-    const f = img.dataset.frame === '0' ? '1' : '0';
-    img.dataset.frame = f;
-    img.src = f === '0' ? img.dataset.img0 : img.dataset.img1;
-  });
-}, 1500);
-
 // Register service worker for PWA
 if ('serviceWorker' in navigator) {
   navigator.serviceWorker.register('sw.js').catch(() => {});

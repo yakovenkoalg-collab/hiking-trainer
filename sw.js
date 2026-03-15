@@ -1,4 +1,4 @@
-const CACHE_NAME = 'hiking-trainer-v4';
+const CACHE_NAME = 'hiking-trainer-v5';
 const CORE_ASSETS = [
   './',
   './index.html',
@@ -7,7 +7,7 @@ const CORE_ASSETS = [
   './icon-512.png'
 ];
 
-// Install: cache core assets
+// Install: cache core assets, activate immediately
 self.addEventListener('install', e => {
   e.waitUntil(
     caches.open(CACHE_NAME)
@@ -16,7 +16,7 @@ self.addEventListener('install', e => {
   );
 });
 
-// Activate: clean old caches
+// Activate: clean old caches, take control immediately
 self.addEventListener('activate', e => {
   e.waitUntil(
     caches.keys().then(keys =>
@@ -25,7 +25,7 @@ self.addEventListener('activate', e => {
   );
 });
 
-// Fetch: cache-first for core, network-first for images
+// Fetch: network-first for HTML, cache-first for static assets
 self.addEventListener('fetch', e => {
   const url = new URL(e.request.url);
 
@@ -45,7 +45,19 @@ self.addEventListener('fetch', e => {
     return;
   }
 
-  // Core assets: cache-first
+  // HTML pages: network-first (fresh version online, cache fallback offline)
+  if (e.request.mode === 'navigate' || url.pathname.endsWith('.html') || url.pathname.endsWith('/')) {
+    e.respondWith(
+      fetch(e.request).then(resp => {
+        const clone = resp.clone();
+        caches.open(CACHE_NAME).then(cache => cache.put(e.request, clone));
+        return resp;
+      }).catch(() => caches.match(e.request))
+    );
+    return;
+  }
+
+  // Static assets (icons, manifest): cache-first
   e.respondWith(
     caches.match(e.request).then(cached => cached || fetch(e.request))
   );
