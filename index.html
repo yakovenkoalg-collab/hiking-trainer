@@ -3,7 +3,8 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
-<meta name="theme-color" content="#1b4332">
+<meta name="theme-color" content="#1b4332" media="(prefers-color-scheme: light)">
+<meta name="theme-color" content="#0f1117" media="(prefers-color-scheme: dark)">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="apple-mobile-web-app-title" content="Горный тренер">
@@ -19,6 +20,12 @@
   --phase1:#2d6a4f;--phase2:#e76f51;--phase3:#264653;--phase4:#e9c46a;
   --radius:14px;--shadow:0 2px 12px rgba(0,0,0,.08);
 }
+@media(prefers-color-scheme:dark){:root{
+  --primary:#40916c;--primary-light:#52b788;--primary-dark:#1b4332;
+  --bg:#0f1117;--card:#1a1c25;--text:#e2e4e9;--text-muted:#8b8fa3;
+  --border:#2a2d3a;--success:#52b788;--danger:#f4845f;
+  --shadow:0 2px 12px rgba(0,0,0,.3);
+}}
 html{font-size:16px}
 body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;background:var(--bg);color:var(--text);min-height:100dvh;padding-bottom:env(safe-area-inset-bottom)}
 #app{max-width:480px;margin:0 auto;padding:0 0 80px}
@@ -77,7 +84,7 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;b
 .block-content.open{max-height:2000px}
 .exercise{display:flex;align-items:flex-start;gap:12px;padding:10px 16px;border-top:1px solid var(--border)}
 .exercise.done{opacity:.5}
-.ex-check{width:28px;height:28px;border-radius:8px;border:2px solid var(--border);background:#fff;flex-shrink:0;cursor:pointer;display:flex;align-items:center;justify-content:center;transition:all .2s;margin-top:2px;-webkit-tap-highlight-color:transparent}
+.ex-check{width:28px;height:28px;border-radius:8px;border:2px solid var(--border);background:var(--card);flex-shrink:0;cursor:pointer;display:flex;align-items:center;justify-content:center;transition:all .2s;margin-top:2px;-webkit-tap-highlight-color:transparent}
 .ex-check.checked{background:var(--success);border-color:var(--success)}
 .ex-check.checked::after{content:'✓';color:#fff;font-size:.9rem;font-weight:700}
 .ex-img{width:56px;height:56px;border-radius:10px;background:var(--bg);flex-shrink:0;overflow:hidden;position:relative;cursor:pointer;-webkit-tap-highlight-color:transparent}
@@ -152,6 +159,47 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;b
 .profile-card .pf-desc{font-size:.7rem;color:var(--text-muted);line-height:1.3;margin-top:1px}
 .profile-card .pf-check{width:20px;height:20px;border-radius:50%;border:2px solid var(--border);flex-shrink:0;display:flex;align-items:center;justify-content:center;transition:all .2s}
 .profile-card.active .pf-check{border-color:var(--primary);background:var(--primary);color:#fff;font-size:.7rem}
+
+/* Next training widget */
+.next-train{margin:0 16px 12px;padding:14px 16px;background:linear-gradient(135deg,var(--primary-dark),var(--primary));border-radius:var(--radius);color:#fff;cursor:pointer;-webkit-tap-highlight-color:transparent;transition:transform .15s}
+.next-train:active{transform:scale(.98)}
+.next-train-label{font-size:.72rem;opacity:.7;text-transform:uppercase;letter-spacing:.5px;font-weight:600}
+.next-train-title{font-size:1rem;font-weight:700;margin-top:4px}
+.next-train-sub{font-size:.78rem;opacity:.8;margin-top:2px}
+
+/* Hike countdown */
+.countdown-wrap{padding:0 16px 8px}
+.countdown-card{background:var(--card);border-radius:var(--radius);box-shadow:var(--shadow);padding:14px 16px}
+.countdown-top{display:flex;align-items:center;justify-content:space-between}
+.countdown-label{font-size:.82rem;font-weight:600;color:var(--text-muted)}
+.countdown-date input{padding:6px 8px;border:1px solid var(--border);border-radius:8px;font-size:.8rem;background:var(--card);color:var(--text);font-family:inherit}
+.countdown-num{font-size:2rem;font-weight:800;color:var(--primary);margin-top:8px}
+.countdown-detail{font-size:.78rem;color:var(--text-muted);margin-top:2px}
+
+/* Streak */
+.streak-badge{display:inline-flex;align-items:center;gap:4px;font-size:.78rem;font-weight:700;color:var(--danger);margin-left:8px}
+
+/* Training notes */
+.notes-wrap{padding:8px 12px 0}
+.notes-area{width:100%;min-height:60px;padding:10px;border:2px solid var(--border);border-radius:var(--radius);font-size:.82rem;font-family:inherit;background:var(--card);color:var(--text);resize:vertical;line-height:1.4}
+.notes-area::placeholder{color:var(--text-muted)}
+.notes-label{font-size:.78rem;color:var(--text-muted);font-weight:600;margin-bottom:6px}
+
+/* History */
+.history-item{font-size:.78rem;color:var(--text-muted);padding:4px 0;display:flex;justify-content:space-between}
+.history-wrap{padding:8px 16px}
+.history-title{font-size:.82rem;font-weight:600;color:var(--text-muted);margin-bottom:6px}
+
+/* Readiness test */
+.test-wrap{margin:0 12px 14px;background:var(--card);border-radius:var(--radius);box-shadow:var(--shadow);overflow:hidden;padding:14px 16px}
+.test-title{font-size:.92rem;font-weight:700;margin-bottom:8px}
+.test-item{display:flex;align-items:center;gap:10px;padding:8px 0;font-size:.82rem}
+.test-item input[type=checkbox]{width:20px;height:20px;accent-color:var(--success)}
+.test-result{font-size:.82rem;font-weight:600;margin-top:10px;padding:10px;border-radius:8px;text-align:center}
+
+/* Week skip */
+.skip-wrap{padding:0 16px 12px}
+.skip-btn{background:none;border:1px solid var(--border);color:var(--text-muted);border-radius:10px;padding:8px 14px;font-size:.78rem;cursor:pointer;font-weight:600}
 
 /* Animations */
 @keyframes fadeIn{from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:none}}
@@ -1058,29 +1106,30 @@ const PROGRAM = [
 // ============ STATE ============
 const STORAGE_KEY = 'hiking-trainer-v1';
 let state = {
-  screen: 'program', // program | week | day
-  weekIdx: 0,
-  dayIdx: 0,
-  completed: {},
+  screen: 'program', weekIdx: 0, dayIdx: 0,
+  completed: {},   // {"w0d0b0e0": true, ...}
   openBlocks: {},
-  profile: 'hike', // profile id — default recommended
-  venues: {} // per-day overrides: {"w0d0":"home",...}
+  profile: 'hike',
+  venues: {},      // per-day overrides
+  hikeDate: '',    // ISO date string for countdown
+  notes: {},       // {"w0d0": "text", ...}
+  history: {},     // {"w0d0": {date: "2026-03-15", startMs: 123, endMs: 456}, ...}
+  weekOffset: 0    // number of weeks shifted (for skip)
 };
+
+const PERSIST_KEYS = ['completed','weekIdx','profile','venues','hikeDate','notes','history','weekOffset'];
 
 function loadState() {
   try {
     const s = JSON.parse(localStorage.getItem(STORAGE_KEY));
-    if (s) {
-      state.completed = s.completed || {};
-      state.weekIdx = s.weekIdx || 0;
-      state.profile = s.profile || 'hike';
-      state.venues = s.venues || {};
-    }
+    if (s) { PERSIST_KEYS.forEach(k => { if (s[k] != null) state[k] = s[k]; }); }
   } catch(e) {}
 }
 
 function saveState() {
-  localStorage.setItem(STORAGE_KEY, JSON.stringify({ completed: state.completed, weekIdx: state.weekIdx, profile: state.profile, venues: state.venues }));
+  const o = {};
+  PERSIST_KEYS.forEach(k => o[k] = state[k]);
+  localStorage.setItem(STORAGE_KEY, JSON.stringify(o));
 }
 
 function exId(w, d, bIdx, eIdx) { return `w${w}d${d}b${bIdx}e${eIdx}`; }
@@ -1090,6 +1139,17 @@ function isExDone(id) { return !!state.completed[id]; }
 function toggleEx(id) {
   if (state.completed[id]) delete state.completed[id];
   else state.completed[id] = true;
+  // Track history timing
+  const m = id.match(/w(\d+)d(\d+)/);
+  if (m) {
+    const hk = `w${m[1]}d${m[2]}`;
+    if (!state.history[hk]) state.history[hk] = {};
+    const h = state.history[hk];
+    const now = Date.now();
+    if (!h.startMs) h.startMs = now;
+    h.endMs = now;
+    h.date = new Date().toISOString().slice(0,10);
+  }
   saveState();
 }
 
@@ -1124,6 +1184,85 @@ function getTotalProgress() {
 }
 
 function getPhase(wIdx) { return Math.floor(wIdx / 4); }
+
+// Next incomplete training
+function getNextTraining() {
+  for (let w = 0; w < 16; w++) {
+    for (let d = 0; d < 3; d++) {
+      const dc = getDayExCount(w, d);
+      if (dc.done < dc.total) return { w, d };
+    }
+  }
+  return null;
+}
+
+// Streak: count consecutive completed days (backwards from latest completed)
+function getStreak() {
+  let streak = 0;
+  for (let w = 0; w < 16; w++) {
+    for (let d = 0; d < 3; d++) {
+      const dc = getDayExCount(w, d);
+      if (dc.done === dc.total && dc.total > 0) streak++;
+      else return streak;
+    }
+  }
+  return streak;
+}
+
+// Hike countdown
+function getHikeCountdown() {
+  if (!state.hikeDate) return null;
+  const diff = Math.ceil((new Date(state.hikeDate + 'T00:00:00') - new Date()) / 86400000);
+  return diff;
+}
+
+function setHikeDate(v) {
+  state.hikeDate = v;
+  saveState();
+  render();
+}
+
+// Notes
+function saveDayNotes(w, d) {
+  const ta = document.getElementById('dayNotes');
+  if (!ta) return;
+  const key = `w${w}d${d}`;
+  if (ta.value.trim()) state.notes[key] = ta.value.trim();
+  else delete state.notes[key];
+  saveState();
+}
+
+// Week skip
+function skipWeek() {
+  if (confirm('Пропустить текущую неделю? Программа сдвинется на 1 неделю.')) {
+    state.weekOffset = (state.weekOffset || 0) + 1;
+    saveState();
+    render();
+  }
+}
+
+// Readiness test per phase
+const READINESS_TESTS = [
+  null, // Phase 1 — no test before it
+  [ // Before Phase 2
+    'Приседания с рюкзаком 15 кг × 15 раз без остановки',
+    'Планка 45 секунд',
+    'Зашагивания 20 на каждую ногу',
+    'Лёгкий бег 2 км без остановки'
+  ],
+  [ // Before Phase 3
+    'Приседания с рюкзаком 20 кг × 12 раз',
+    'Непрерывный бег 5 км (или 30 мин)',
+    'Подтягивания 5 раз',
+    'Ходьба в гору 30 мин с рюкзаком 15 кг без сильной одышки'
+  ],
+  [ // Before Phase 4
+    'Приседания с рюкзаком 20 кг × 15 раз',
+    'Непрерывный бег 8 км (или 45 мин)',
+    'Подъёмы на носки на одной ноге × 20',
+    'Поход 2+ часа с рюкзаком 12 кг без проблем'
+  ]
+];
 
 // ============ TIMER ============
 let timerInterval = null;
@@ -1306,7 +1445,7 @@ function getExImgHtml(name) {
   const url0 = IMG_BASE + id + '/0.jpg';
   const url1 = IMG_BASE + id + '/1.jpg';
   const safeName = name.replace(/'/g, "\\'");
-  return `<img src="${url0}" alt="" loading="lazy" data-img0="${url0}" data-img1="${url1}" onerror="this.style.display='none'" onclick="openLightbox(this,'${safeName}')">`;
+  return `<img src="${url0}" alt="" loading="lazy" data-img0="${url0}" data-img1="${url1}" data-frame="0" onerror="this.style.display='none'" onclick="openLightbox(this,'${safeName}')">`;
 }
 
 // Lightbox
@@ -1947,9 +2086,43 @@ function renderProgram() {
   let html = `
     <div class="header">
       <h1>&#9968; Горный тренер</h1>
-      <div class="header-sub">Подготовка к походу &bull; 16 недель &bull; ${pct}% выполнено</div>
+      <div class="header-sub">Подготовка к походу &bull; 16 недель &bull; ${pct}% выполнено${getStreak()>=2?`<span class="streak-badge">&#128293; ${getStreak()} подряд</span>`:''}</div>
       <div class="progress-bar-wrap"><div class="progress-bar-fill" style="width:${pct}%"></div></div>
     </div>
+  `;
+
+  // Next training widget
+  const nt = getNextTraining();
+  if (nt) {
+    const ntDay = getDayData(nt.w, nt.d);
+    const DAYS_S = ['Вт','Чт','Сб'];
+    html += `
+      <div class="next-train fade-in" onclick="navigate('day',${nt.w},${nt.d})">
+        <div class="next-train-label">Следующая тренировка</div>
+        <div class="next-train-title">Неделя ${nt.w+1}, ${DAYS_S[nt.d]} &mdash; ${ntDay.focus}</div>
+        <div class="next-train-sub">${VENUE_LABELS[getDayVenue(nt.w,nt.d)]} &bull; Нажмите чтобы начать &rarr;</div>
+      </div>
+    `;
+  }
+
+  // Hike countdown
+  const hikeDays = getHikeCountdown();
+  html += `
+    <div class="countdown-wrap">
+      <div class="countdown-card">
+        <div class="countdown-top">
+          <div class="countdown-label">&#9968; Обратный отсчёт до похода</div>
+          <div class="countdown-date"><input type="date" value="${state.hikeDate||''}" onchange="setHikeDate(this.value)"></div>
+        </div>
+        ${hikeDays !== null ? `
+          <div class="countdown-num">${hikeDays > 0 ? hikeDays : (hikeDays === 0 ? '&#127881;' : Math.abs(hikeDays))} ${hikeDays > 0 ? (hikeDays===1?'день':hikeDays<5?'дня':'дней') : (hikeDays===0?'Сегодня поход!':'дней назад')}</div>
+          ${nt && hikeDays > 0 ? `<div class="countdown-detail">Осталось тренировок: ~${Math.min(hikeDays > 0 ? Math.floor(hikeDays/7)*3+Math.min(hikeDays%7,3) : 0, 48 - tp.done)}</div>` : ''}
+        ` : '<div class="countdown-detail" style="margin-top:8px">Укажите дату похода для обратного отсчёта</div>'}
+      </div>
+    </div>
+  `;
+
+  html += `
     <div class="profile-wrap">
       <div class="profile-label">Формат тренировок</div>
       <div class="profile-cards">
@@ -1969,6 +2142,16 @@ function renderProgram() {
 
   for (let p = 0; p < 4; p++) {
     const phase = PHASES[p];
+    // Readiness test before phase
+    if (READINESS_TESTS[p]) {
+      html += `
+        <div class="test-wrap fade-in">
+          <div class="test-title">&#9989; Тест готовности к Фазе ${p+1}</div>
+          ${READINESS_TESTS[p].map((t,i) => `<div class="test-item"><input type="checkbox" id="rt${p}_${i}"><label for="rt${p}_${i}">${t}</label></div>`).join('')}
+          <div class="test-result" style="background:var(--border);color:var(--text-muted)">Отметьте все пункты, если готовы к следующей фазе</div>
+        </div>
+      `;
+    }
     html += `
       <div class="phase-section fade-in">
         <div class="phase-header">
@@ -2060,6 +2243,16 @@ function renderWeek() {
   });
 
   html += `</div>`;
+  // Week history summary
+  const weekHists = [0,1,2].map(di => state.history[`w${w}d${di}`]).filter(Boolean);
+  if (weekHists.length > 0) {
+    html += `<div class="history-wrap"><div class="history-title">Выполнено на этой неделе</div>`;
+    weekHists.forEach(h => {
+      const dur = h.endMs && h.startMs ? Math.round((h.endMs - h.startMs) / 60000) : 0;
+      html += `<div class="history-item"><span>${h.date || '—'}</span>${dur > 0 ? `<span>~${dur} мин</span>` : '<span></span>'}</div>`;
+    });
+    html += `</div>`;
+  }
   app.innerHTML = html;
 }
 
@@ -2125,6 +2318,9 @@ function renderDay() {
       const vex = day.isOverride ? ex : getExForVenue(ex, effectiveVenue);
       const eid = exId(w, d, bi, ei);
       const done = isExDone(eid);
+      // Detect timed exercises
+      const timeMatch = vex.params.match(/^(\d+)\s*(мин|сек)/);
+      const exTimerSec = timeMatch ? (timeMatch[2]==='мин' ? parseInt(timeMatch[1])*60 : parseInt(timeMatch[1])) : 0;
       html += `
         <div class="exercise ${done?'done':''}">
           <div class="ex-check ${done?'checked':''}" onclick="toggleExercise('${eid}')"></div>
@@ -2133,7 +2329,10 @@ function renderDay() {
             <div class="ex-name">${vex.name}</div>
             ${vex.params ? `<div class="ex-params">${vex.params}</div>` : ''}
             ${vex.notes ? `<div class="ex-notes">${vex.notes}</div>` : ''}
-            ${block.rest > 0 ? `<button class="ex-rest-btn" onclick="startTimer(${block.rest},'${typeLabel}: отдых')">&#9202; Отдых ${block.rest >= 60 ? Math.floor(block.rest/60)+' мин' : block.rest+' сек'}</button>` : ''}
+            <div style="display:flex;gap:6px;flex-wrap:wrap">
+              ${exTimerSec > 0 ? `<button class="ex-rest-btn" style="background:var(--success)" onclick="startTimer(${exTimerSec},'${vex.name.replace(/'/g,"\\'")}')">&#9654; ${timeMatch[1]} ${timeMatch[2]}</button>` : ''}
+              ${block.rest > 0 ? `<button class="ex-rest-btn" onclick="startTimer(${block.rest},'${typeLabel}: отдых')">&#9202; Отдых ${block.rest >= 60 ? Math.floor(block.rest/60)+' мин' : block.rest+' сек'}</button>` : ''}
+            </div>
           </div>
         </div>
       `;
@@ -2149,6 +2348,28 @@ function renderDay() {
       </button>
     </div>
   `;
+
+  // Notes
+  const noteKey = `w${w}d${d}`;
+  html += `
+    <div class="notes-wrap">
+      <div class="notes-label">Заметки (вес, пульс, самочувствие)</div>
+      <textarea class="notes-area" id="dayNotes" placeholder="Запишите свои наблюдения..." onblur="saveDayNotes(${w},${d})">${state.notes[noteKey]||''}</textarea>
+    </div>
+  `;
+
+  // History
+  const hist = state.history[noteKey];
+  if (hist && hist.date) {
+    const dur = hist.endMs && hist.startMs ? Math.round((hist.endMs - hist.startMs) / 60000) : 0;
+    html += `
+      <div class="history-wrap">
+        <div class="history-title">История</div>
+        <div class="history-item"><span>Дата</span><span>${hist.date}</span></div>
+        ${dur > 0 ? `<div class="history-item"><span>Длительность</span><span>~${dur} мин</span></div>` : ''}
+      </div>
+    `;
+  }
 
   // day navigation
   html += `
@@ -2274,6 +2495,15 @@ navigate = function(screen, weekIdx, dayIdx) {
 // ============ INIT ============
 loadState();
 render();
+
+// Mini-animation: toggle exercise images between frame 0 and 1
+setInterval(() => {
+  document.querySelectorAll('.ex-img img[data-frame]').forEach(img => {
+    const f = img.dataset.frame === '0' ? '1' : '0';
+    img.dataset.frame = f;
+    img.src = f === '0' ? img.dataset.img0 : img.dataset.img1;
+  });
+}, 1500);
 
 // Register service worker for PWA
 if ('serviceWorker' in navigator) {
