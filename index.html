@@ -121,6 +121,30 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;b
 .lightbox-toggle button{background:rgba(255,255,255,.15);border:1px solid rgba(255,255,255,.25);color:#fff;border-radius:10px;padding:10px 20px;font-size:.85rem;cursor:pointer;font-weight:600;transition:background .2s}
 .lightbox-toggle button.active{background:var(--primary);border-color:var(--primary)}
 
+/* Venue selector */
+.venue-wrap{padding:14px 16px 0}
+.venue-label{font-size:.82rem;color:var(--text-muted);margin-bottom:8px;font-weight:600}
+.venue-tabs{display:flex;gap:6px}
+.venue-tab{flex:1;padding:10px 6px 8px;border:2px solid var(--border);border-radius:var(--radius);background:var(--card);font-size:.78rem;font-weight:600;cursor:pointer;text-align:center;transition:all .2s;-webkit-tap-highlight-color:transparent;line-height:1.3}
+.venue-tab.active{border-color:var(--primary);background:var(--primary);color:#fff}
+.venue-tab .venue-icon{font-size:1.2rem;display:block;margin-bottom:2px}
+.venue-equip{font-size:.72rem;color:var(--text-muted);padding:8px 16px 0;line-height:1.4;font-style:italic}
+.venue-badge{display:inline-block;font-size:.68rem;padding:2px 8px;border-radius:10px;font-weight:600;margin-left:8px;vertical-align:middle}
+.venue-override{font-size:.65rem;color:var(--primary-light);margin-top:2px;font-style:italic}
+
+/* Profile selector */
+.profile-wrap{padding:0 16px 8px}
+.profile-label{font-size:.82rem;color:var(--text-muted);margin-bottom:8px;font-weight:600}
+.profile-cards{display:flex;flex-direction:column;gap:6px}
+.profile-card{display:flex;align-items:center;gap:10px;padding:10px 12px;border:2px solid var(--border);border-radius:var(--radius);background:var(--card);cursor:pointer;transition:all .2s;-webkit-tap-highlight-color:transparent}
+.profile-card.active{border-color:var(--primary);background:linear-gradient(135deg,rgba(79,70,229,.08),rgba(79,70,229,.02))}
+.profile-card .pf-icon{font-size:1.4rem;width:32px;text-align:center;flex-shrink:0}
+.profile-card .pf-info{flex:1;min-width:0}
+.profile-card .pf-name{font-size:.85rem;font-weight:700;color:var(--text)}
+.profile-card .pf-desc{font-size:.7rem;color:var(--text-muted);line-height:1.3;margin-top:1px}
+.profile-card .pf-check{width:20px;height:20px;border-radius:50%;border:2px solid var(--border);flex-shrink:0;display:flex;align-items:center;justify-content:center;transition:all .2s}
+.profile-card.active .pf-check{border-color:var(--primary);background:var(--primary);color:#fff;font-size:.7rem}
+
 /* Animations */
 @keyframes fadeIn{from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:none}}
 .fade-in{animation:fadeIn .25s ease}
@@ -1030,18 +1054,25 @@ let state = {
   weekIdx: 0,
   dayIdx: 0,
   completed: {},
-  openBlocks: {}
+  openBlocks: {},
+  profile: 'hike', // profile id — default recommended
+  venues: {} // per-day overrides: {"w0d0":"home",...}
 };
 
 function loadState() {
   try {
     const s = JSON.parse(localStorage.getItem(STORAGE_KEY));
-    if (s) { state.completed = s.completed || {}; state.weekIdx = s.weekIdx || 0; }
+    if (s) {
+      state.completed = s.completed || {};
+      state.weekIdx = s.weekIdx || 0;
+      state.profile = s.profile || 'hike';
+      state.venues = s.venues || {};
+    }
   } catch(e) {}
 }
 
 function saveState() {
-  localStorage.setItem(STORAGE_KEY, JSON.stringify({ completed: state.completed, weekIdx: state.weekIdx }));
+  localStorage.setItem(STORAGE_KEY, JSON.stringify({ completed: state.completed, weekIdx: state.weekIdx, profile: state.profile, venues: state.venues }));
 }
 
 function exId(w, d, bIdx, eIdx) { return `w${w}d${d}b${bIdx}e${eIdx}`; }
@@ -1055,7 +1086,7 @@ function toggleEx(id) {
 }
 
 function getDayExCount(wIdx, dIdx) {
-  const day = PROGRAM[wIdx][dIdx];
+  const day = getDayData(wIdx, dIdx);
   let total = 0, done = 0;
   day.blocks.forEach((bl, bi) => {
     bl.exercises.forEach((_, ei) => {
@@ -1154,6 +1185,7 @@ const PHOTO_MAP = [
   [/good\s?morning|гуд\s?мор/i, 'Good_Morning'],
   [/жим ног|платформ/i, 'Leg_Press'],
   [/разгибание голен|разгибание ног/i, 'Leg_Extensions'],
+  [/сгибание ног.*фитбол/i, 'Ball_Leg_Curl'],
   [/сгибание голен|сгибание ног/i, 'Seated_Leg_Curl'],
   [/отведение ног/i, 'Thigh_Abductor'],
   [/сведение ног/i, 'Thigh_Adductor'],
@@ -1186,7 +1218,12 @@ const PHOTO_MAP = [
   [/французск.*жим|разгибание рук.*головы|skull/i, 'EZ-Bar_Skullcrusher'],
   [/разгибание рук.*блок|трицепс.*блок|tricep.*push/i, 'Triceps_Pushdown_-_Rope_Attachment'],
   [/разгибание.*гантел.*трицепс|разгибание руки.*гантел/i, 'Dumbbell_One-Arm_Triceps_Extension'],
+  [/боков.*планк|side.*plank/i, 'Side_Bridge_-_Hip_Abduction'],
+  [/динамическ.*планк/i, 'Pushups'],
+  [/планк.*протяжк|планк.*полотенц/i, 'Ab_Roller'],
+  [/планк.*рюкзак/i, 'Plank'],
   [/планк/i, 'Plank'],
+  [/скручиван.*фитбол/i, 'Exercise_Ball_Crunch'],
   [/скручиван.*диагон|косы.*скручиван|боков.*скручиван/i, 'Oblique_Crunches_-_On_The_Floor'],
   [/скручиван|ситап|sit.*up|складк/i, 'Crunches'],
   [/обратн.*скручиван/i, 'Reverse_Crunch'],
@@ -1196,6 +1233,7 @@ const PHOTO_MAP = [
   [/альпинист|mountain.*climb/i, 'Mountain_Climbers'],
   [/бёрпи|берпи|burpee/i, 'Mountain_Climbers'],
   [/фермерск.*проходк/i, 'Farmers_Walk'],
+  [/гиперэкстензи.*фитбол/i, 'Exercise_Ball_Back_Extension'],
   [/гиперэкстензи|hyperext/i, 'Hyperextensions_Back_Extensions'],
   [/дорожк.*уклон|дорожк/i, 'Walking_Treadmill'],
   [/эллипс/i, 'Elliptical_Trainer'],
@@ -1209,9 +1247,10 @@ const PHOTO_MAP = [
   [/взятие.*гир|гир.*на грудь|гир.*на плечо|kettlebell.*clean/i, 'One-Arm_Kettlebell_Clean'],
   [/рывок.*гантел/i, 'One-Arm_Kettlebell_Snatch'],
   [/wall.*ball|волбол/i, 'Backward_Medicine_Ball_Throw'],
-  [/стульчик|wall.*sit/i, 'Bodyweight_Squat'],
+  [/стульчик|wall.*sit/i, 'Wall_Squat'],
   [/полусфер|баланс|стойка.*одной|закрыт.*глаз/i, 'Balance_Board'],
   [/растяжк|растяж|stretch/i, 'All_Fours_Quad_Stretch'],
+  [/скатыван.*фитбол|roll.*out.*фитбол/i, 'Exercise_Ball_Pull-In'],
   [/валик|раскатк|roll|it-band/i, 'Anterior_Tibialis-SMR'],
   [/разминк|суставн/i, 'Arm_Circles'],
   [/рюкзак|ходьб.*рюкзак|прогулк/i, 'Walking_Treadmill'],
@@ -1223,6 +1262,26 @@ const PHOTO_MAP = [
   [/ягодичн.*мост|glute.*bridge/i, 'Barbell_Glute_Bridge'],
   [/часик/i, 'Plate_Twist'],
   [/вращени.*бодибар|вращени.*штанг/i, 'Seated_Barbell_Twist'],
+  // Venue substitution exercises
+  [/бег на месте|^лёгкий бег$|^бег$/i, 'Jogging_Treadmill'],
+  [/jumping.*jack/i, 'Rope_Jumping'],
+  [/ходьба.*лестниц/i, 'Walking_Treadmill'],
+  [/ходьба.*гору|поход.*гору/i, 'Walking_Treadmill'],
+  [/приседания с рюкзаком|присед.*рюкзаком/i, 'Bodyweight_Squat'],
+  [/австралийск.*подтягиван/i, 'Pullups'],
+  [/подтягивания на турник/i, 'Pullups'],
+  [/подтягивания обратн.*хват/i, 'Chin-Up'],
+  [/пика.*push|pike.*push|отжимания.*пика/i, 'Pushups'],
+  [/алмазн.*отжимани/i, 'Pushups'],
+  [/тяга.*эспандер.*поясу/i, 'Seated_Cable_Rows'],
+  [/подъёмы рук.*эспандер/i, 'Side_Lateral_Raise'],
+  [/сгибание рук.*эспандер/i, 'Barbell_Curl'],
+  [/разведение рук.*эспандер/i, 'Reverse_Flyes'],
+  [/махи.*рюкзак/i, 'One-Arm_Kettlebell_Clean'],
+  [/обратные отжимания.*стул/i, 'Bench_Dips'],
+  [/подъёмы ног лёжа/i, 'Flat_Bench_Lying_Leg_Raise'],
+  [/чередование лестниц/i, 'Walking_Treadmill'],
+  [/зашагиван.*степ/i, 'Dumbbell_Step_Ups'],
 ];
 
 function getExImgId(name) {
@@ -1282,6 +1341,579 @@ function renderLbImgs() {
   }
 }
 
+// ============ VENUE SUBSTITUTIONS ============
+const VENUE_LABELS = {gym:'Спортзал',home:'Дома',outdoor:'Улица',run:'Бег'};
+const VENUE_EQUIP = {
+  gym:'',
+  home:'Оборудование: турник, брусья, фитбол, степ, эспандер, рюкзак с весом',
+  outdoor:'Понадобится: турник, брусья, скамья в парке, рюкзак с весом, эспандер',
+  run:'Вт/Сб — беговая программа. Чт — силовая (улица)'
+};
+
+// ============ PROFILES ============
+// Each profile: {id, icon, name, desc, venue(w,d) → venue}
+const PROFILES = [
+  {id:'hike', icon:'⛰️', name:'Горный поход', desc:'Рекомендован. Зал → бег по фазам, оптимальная подготовка к походу',
+    venue:(w,d) => {
+      const phase = Math.floor(w/4);
+      if (phase === 0) return 'gym'; // Phase 1: all gym
+      if (phase === 1) return d === 1 ? 'gym' : 'run'; // Phase 2: Tue/Sat run, Thu gym
+      return d === 1 ? 'outdoor' : 'run'; // Phase 3-4: Tue/Sat run, Thu outdoor
+    }},
+  {id:'gym', icon:'🏋️', name:'Спортзал', desc:'Все тренировки в зале',
+    venue:() => 'gym'},
+  {id:'home', icon:'🏠', name:'Дома', desc:'Турник, брусья, фитбол, степ, эспандер',
+    venue:() => 'home'},
+  {id:'outdoor', icon:'🌳', name:'Улица', desc:'Парк с турником и брусьями, рюкзак',
+    venue:() => 'outdoor'},
+  {id:'run', icon:'🏃', name:'Бег', desc:'Вт/Сб — беговая программа, Чт — силовая на улице',
+    venue:(w,d) => d === 1 ? 'outdoor' : 'run'}
+];
+
+// Helpers: replace kg/watt in params
+const _rk = r => s => {
+  let o = s.replace(/\d+-?\d*\s*кг(\s*(доп\.\s*дисков|противовес))?,?\s*/g, r?r+', ':'');
+  return o.replace(/^,\s*|,\s*$/g,'').replace(/\s*,\s*,\s*/g,', ').trim() || s;
+};
+const _rw = r => s => s.replace(/\d+\s*Ватт,?\s*/g, r?r+', ':'').replace(/,\s*$/,'').trim() || s;
+
+// [regex, homeSub:{n,p?}, outdoorSub:{n,p?}]
+// n = new name, p = params transform function (optional, keeps original if absent)
+const VENUE_SUBS = [
+  // === CARDIO MACHINES ===
+  // Combined exercises (before generic)
+  [/^эллипс\s*\+/i, {n:"Лёгкая ходьба + растяжка"}, {n:"Лёгкая ходьба + растяжка"}],
+  [/^эллипс/i, {n:"Бег на месте"}, {n:"Лёгкий бег"}],
+  [/^аэробайк/i, {n:"Jumping Jacks (прыжки)",p:_rw("")}, {n:"Лёгкий бег",p:_rw("")}],
+  [/^гребля/i, {n:"Бёрпи",p:_rw("")}, {n:"Бег",p:_rw("")}],
+  // Mountain profile sub-steps
+  [/^подъём:.*уклон/i, {n:"Подъём по лестнице"}, {n:"Подъём в гору"}],
+  [/^равнина:/i, {n:"Ходьба по ровному"}, {n:"Ходьба по ровному"}],
+  [/^разминка:.*уклон/i, {n:"Лёгкая ходьба"}, {n:"Лёгкая ходьба"}],
+  // Treadmill with backpack (phases 3-4) — before generic
+  [/дорожк.*рюкзак/i,
+    {n:"Ходьба по лестнице с рюкзаком",p:s=>s.replace(/уклон\s*\d+-?\d*%,?\s*/g,'').replace(/,?\s*\d+-?\d*\s*км\/ч/g,'').replace(/,\s*$/,'').trim()},
+    {n:"Поход в гору с рюкзаком",p:s=>s.replace(/уклон\s*\d+-?\d*%/g,'крутой подъём')}],
+  // Treadmill profile
+  [/дорожк.*горн.*профил/i,
+    {n:"Чередование лестниц: подъём + спуск"},
+    {n:"Поход: чередование подъёмов и равнин"}],
+  // Treadmill generic
+  [/дорожк/i,
+    {n:"Ходьба по лестнице",p:s=>s.replace(/уклон\s*\d+-?\d*%,?\s*/g,'').replace(/,?\s*\d+-?\d*\s*км\/ч/g,'').replace(/,\s*$/,'').trim()},
+    {n:"Ходьба в гору",p:s=>s.replace(/уклон\s*\d+-?\d*%/g,'крутой подъём')}],
+
+  // === LEG MACHINES ===
+  [/жим ногами.*спуск|жим ногами.*медлен/i,
+    {n:"Приседания на одной ноге — медленный спуск",p:_rk("")},
+    {n:"Приседания на одной ноге — медленный спуск",p:_rk("")}],
+  [/жим ногами/i,
+    {n:"Приседания с рюкзаком",p:_rk("рюкзак 15-20 кг")},
+    {n:"Приседания с рюкзаком",p:_rk("рюкзак 15-20 кг")}],
+  [/сгибание голени/i,
+    {n:"Сгибание ног на фитболе лёжа",p:_rk("")},
+    {n:"Сгибание ног лёжа с эспандером",p:_rk("")}],
+  [/разгибание голени/i,
+    {n:"Разгибание ног сидя с эспандером",p:_rk("")},
+    {n:"Зашагивания на скамью",p:_rk("")}],
+  [/гиперэкстензи/i,
+    {n:"Гиперэкстензия на фитболе",p:_rk("")},
+    {n:"Лодочка (супермен)",p:_rk("")}],
+
+  // === SMITH MACHINE ===
+  [/приседания в смите.*спуск/i,
+    {n:"Приседания с рюкзаком — медленный спуск",p:_rk("рюкзак 15 кг")},
+    {n:"Приседания с рюкзаком — медленный спуск",p:_rk("рюкзак 15 кг")}],
+  [/болгарск.*смит/i,
+    {n:"Болгарские приседания",p:s=>s.replace(/\d+\s*кг\s*(доп\.\s*дисков)?,?\s*/,'')},
+    {n:"Болгарские приседания на скамье",p:s=>s.replace(/\d+\s*кг\s*(доп\.\s*дисков)?,?\s*/,'')}],
+  [/приседания в смит/i,
+    {n:"Приседания с рюкзаком",p:_rk("рюкзак 15-20 кг")},
+    {n:"Приседания с рюкзаком",p:_rk("рюкзак 15-20 кг")}],
+
+  // === BARBELL LEGS ===
+  [/румынская тяга на одной ноге.*штанг/i,
+    {n:"Румынская тяга на одной ноге",p:_rk("")},
+    {n:"Румынская тяга на одной ноге",p:_rk("")}],
+  [/румынская тяга со штанг/i,
+    {n:"Румынская тяга с эспандером",p:_rk("тяжёлый эспандер")},
+    {n:"Румынская тяга с рюкзаком",p:_rk("рюкзак 15 кг")}],
+  [/good morning со штанг/i,
+    {n:"Good morning с рюкзаком",p:_rk("рюкзак 10-15 кг")},
+    {n:"Good morning с рюкзаком",p:_rk("рюкзак 10-15 кг")}],
+  [/overhead.*присед/i,
+    {n:"Overhead приседания с рюкзаком",p:_rk("рюкзак 10 кг")},
+    {n:"Overhead приседания с рюкзаком",p:_rk("рюкзак 10 кг")}],
+  [/приседания со штанг/i,
+    {n:"Приседания с рюкзаком",p:_rk("рюкзак 15-20 кг")},
+    {n:"Приседания с рюкзаком",p:_rk("рюкзак 15-20 кг")}],
+  [/становая тяга со штанг|^становая тяга$|^становая$/i,
+    {n:"Становая тяга с эспандером",p:_rk("тяжёлый эспандер")},
+    {n:"Становая тяга с рюкзаком",p:_rk("рюкзак 15-20 кг")}],
+  [/тяга штанги к подбородку/i,
+    {n:"Подъёмы рук с эспандером",p:_rk("средний эспандер")},
+    {n:"Подъёмы рук с эспандером",p:_rk("средний эспандер")}],
+
+  // === BARBELL UPPER BODY ===
+  [/жим штанг.*наклон|жим.*наклон.*штанг/i,
+    {n:"Отжимания, ноги на возвышении",p:_rk("")},
+    {n:"Отжимания, ноги на скамье",p:_rk("")}],
+  [/жим штанг.*леж|жим штанг.*горизонт|жим.*узк.*хват|жим штанги лёжа|жим штанги$/i,
+    {n:"Отжимания от пола",p:_rk("")},
+    {n:"Отжимания от пола",p:_rk("")}],
+  [/армейск.*жим|жим плеч|жим.*сидя.*штанг/i,
+    {n:"Отжимания «пика» (pike push-ups)",p:_rk("")},
+    {n:"Отжимания «пика» (pike push-ups)",p:_rk("")}],
+  [/сгибание рук.*бицепс|бицепс.*штанг|сгибание рук на бицепс/i,
+    {n:"Сгибание рук с эспандером",p:_rk("средний эспандер")},
+    {n:"Подтягивания обратным хватом",p:_rk("")}],
+
+  // === DUMBBELL ===
+  [/жим гантел.*наклон/i,
+    {n:"Отжимания, ноги на возвышении",p:_rk("")},
+    {n:"Отжимания, ноги на скамье",p:_rk("")}],
+  [/жим гантел/i,
+    {n:"Отжимания от пола",p:_rk("")},
+    {n:"Отжимания от пола",p:_rk("")}],
+  [/зашагиван.*гантел/i,
+    {n:"Зашагивания на степ с рюкзаком",p:_rk("рюкзак 10-15 кг")},
+    {n:"Зашагивания с рюкзаком на скамью",p:_rk("рюкзак 10-15 кг")}],
+  [/выпады.*проходка.*гантел/i,
+    {n:"Выпады-проходка с рюкзаком",p:_rk("рюкзак 10-15 кг")},
+    {n:"Выпады-проходка с рюкзаком",p:_rk("рюкзак 10-15 кг")}],
+  [/фронтальн.*присед.*гантел/i,
+    {n:"Приседания с рюкзаком перед собой",p:_rk("рюкзак 15 кг")},
+    {n:"Приседания с рюкзаком перед собой",p:_rk("рюкзак 15 кг")}],
+  [/латеральн.*выпад.*гантел/i,
+    {n:"Латеральные выпады с рюкзаком",p:_rk("рюкзак")},
+    {n:"Латеральные выпады",p:_rk("")}],
+  [/выпады назад.*гантел|выпады назад.*контроль/i,
+    {n:"Выпады назад с рюкзаком",p:_rk("рюкзак 10 кг")},
+    {n:"Выпады назад с рюкзаком",p:_rk("рюкзак 10 кг")}],
+  [/подъёмы на носки.*гантел|подъёмы на носки.*\d+\s*кг/i,
+    {n:"Подъёмы на носки с рюкзаком",p:_rk("рюкзак")},
+    {n:"Подъёмы на носки на ступеньке"}],
+  [/фермерская проходка/i,
+    {n:"Фермерская проходка с канистрами воды",p:_rk("5-10 кг в руке")},
+    {n:"Фермерская проходка с канистрами воды",p:_rk("5-10 кг в руке")}],
+  [/тяга гантел.*наклон|тяга гантел.*лёж/i,
+    {n:"Тяга рюкзака в наклоне",p:_rk("рюкзак 10-15 кг")},
+    {n:"Тяга рюкзака в наклоне",p:_rk("рюкзак 10-15 кг")}],
+  [/пуловер.*гантел/i,
+    {n:"Пуловер с рюкзаком лёжа",p:_rk("рюкзак 8-10 кг")},
+    {n:"Пуловер с рюкзаком лёжа",p:_rk("рюкзак 8-10 кг")}],
+  [/отведени.*рук.*гантел.*наклон/i,
+    {n:"Разведение рук с эспандером в наклоне",p:_rk("лёгкий эспандер")},
+    {n:"Разведение рук с эспандером в наклоне",p:_rk("лёгкий эспандер")}],
+  [/становая.*одной ноге.*гантел|становая на одной ноге.*\d+\s*кг/i,
+    {n:"Становая на одной ноге",p:_rk("")},
+    {n:"Становая на одной ноге",p:_rk("")}],
+  [/болгарск.*спуск|болгарск.*гантел/i,
+    {n:"Болгарские приседания — медленный спуск",p:s=>s.replace(/с гантелями?\s*\d+-?\d*\s*кг,?\s*/,'')},
+    {n:"Болгарские приседания — медленный спуск",p:s=>s.replace(/с гантелями?\s*\d+-?\d*\s*кг,?\s*/,'')}],
+
+  // === CABLE / MACHINE UPPER BODY ===
+  [/подтягиван.*гравитрон|подтягиван.*амортизат/i,
+    {n:"Подтягивания на турнике с резинкой",p:_rk("")},
+    {n:"Подтягивания на турнике с резинкой",p:_rk("")}],
+  [/подтягивания.*прогрессия|подтягивания.*без помощи.*добить/i,
+    {n:"Подтягивания на турнике"},
+    {n:"Подтягивания на турнике"}],
+  [/подтягивания.*без помощи|подтягивания.*к максимуму/i,
+    {n:"Подтягивания на турнике"},
+    {n:"Подтягивания на турнике"}],
+  [/вертикальн.*тяг|тяга.*широк.*хват/i,
+    {n:"Подтягивания на турнике",p:_rk("")},
+    {n:"Подтягивания на турнике",p:_rk("")}],
+  [/горизонтальн.*тяг|тяга.*сидя/i,
+    {n:"Австралийские подтягивания на турнике",p:_rk("")},
+    {n:"Австралийские подтягивания",p:_rk("")}],
+  [/сведение рук.*кроссовер|кроссовер|сведение рук.*вниз/i,
+    {n:"Отжимания узким хватом",p:_rk("")},
+    {n:"Отжимания на брусьях",p:_rk("")}],
+  [/сведение рук.*тренаж/i,
+    {n:"Отжимания с узкой постановкой",p:_rk("")},
+    {n:"Отжимания на брусьях",p:_rk("")}],
+  [/отжимания на брусь|^брусья$/i,
+    {n:"Отжимания на брусьях"},
+    {n:"Отжимания на брусьях"}],
+  [/обратные отжимания.*скамь/i,
+    {n:"Обратные отжимания от стула"},
+    {n:"Обратные отжимания от скамьи"}],
+  [/тяга.*подбородк.*косичк|тяга.*рейдер/i,
+    {n:"Подъёмы рук с эспандером",p:_rk("средний эспандер")},
+    {n:"Подъёмы рук с эспандером",p:_rk("средний эспандер")}],
+  [/французск.*жим/i,
+    {n:"Алмазные отжимания",p:_rk("")},
+    {n:"Алмазные отжимания",p:_rk("")}],
+  [/обратн.*бабочк/i,
+    {n:"Разведение рук с эспандером в наклоне",p:_rk("лёгкий эспандер")},
+    {n:"Разведение рук с эспандером в наклоне",p:_rk("лёгкий эспандер")}],
+
+  // === WEIGHTED CORE ===
+  [/скручиван.*диск|скручиван.*полусфер.*диск/i,
+    {n:"Скручивания на фитболе",p:_rk("")},
+    {n:"Скручивания",p:_rk("")}],
+  [/русский твист.*медбол|русский твист.*\d+\s*кг/i,
+    {n:"Русский твист",p:_rk("")},
+    {n:"Русский твист",p:_rk("")}],
+  [/стульчик.*блин|стульчик.*\d+\s*кг/i,
+    {n:"Стульчик у стены",p:s=>s.replace(/\d+\s*кг.*?(,\s*|$)/,'')},
+    {n:"Стульчик у стены",p:s=>s.replace(/\d+\s*кг.*?(,\s*|$)/,'')}],
+  [/планка.*вес|планка.*\d+\s*кг/i,
+    {n:"Планка с рюкзаком",p:_rk("рюкзак на спине")},
+    {n:"Планка с рюкзаком",p:_rk("рюкзак на спине")}],
+  [/подъёмы ног в висе/i,
+    {n:"Подъёмы ног в висе на турнике"},
+    {n:"Подъёмы ног в висе на турнике"}],
+  [/ролик.*прес|пресс.*ролик|ролик на коленях/i,
+    {n:"Скатывание на фитболе (roll-out)"},
+    {n:"Планка-протяжка (на полотенце)"}],
+
+  // === KETTLEBELLS ===
+  [/взятие.*гир/i,
+    {n:"Махи рюкзаком (имитация гири)",p:_rk("рюкзак 10-15 кг")},
+    {n:"Махи рюкзаком (имитация гири)",p:_rk("рюкзак 10-15 кг")}],
+  [/турецк.*подъём/i,
+    {n:"Турецкие подъёмы с рюкзаком",p:_rk("рюкзак 8-10 кг")},
+    {n:"Турецкие подъёмы с рюкзаком",p:_rk("рюкзак 8-10 кг")}],
+];
+
+function getExForVenue(ex, venue) {
+  if (venue === 'gym') return ex;
+  for (const [rx, homeSub, outdoorSub] of VENUE_SUBS) {
+    if (rx.test(ex.name)) {
+      const s = venue === 'home' ? homeSub : outdoorSub;
+      if (!s) return ex;
+      let params = s.p ? s.p(ex.params) : ex.params;
+      return { name: s.n, params: params, notes: ex.notes };
+    }
+  }
+  return ex;
+}
+
+function dayVenueKey(w, d) { return `w${w}d${d}`; }
+function getProfileVenue(w, d) {
+  const p = PROFILES.find(p => p.id === state.profile);
+  return p ? p.venue(w, d) : 'gym';
+}
+function getDayVenue(w, d) { return state.venues[dayVenueKey(w, d)] || getProfileVenue(w, d); }
+function isDayOverridden(w, d) { return !!state.venues[dayVenueKey(w, d)]; }
+function setDayVenue(w, d, v) {
+  const profileDefault = getProfileVenue(w, d);
+  if (v === profileDefault) delete state.venues[dayVenueKey(w, d)];
+  else state.venues[dayVenueKey(w, d)] = v;
+  saveState();
+  render();
+}
+function setProfile(id) {
+  state.profile = id;
+  state.venues = {}; // reset per-day overrides
+  saveState();
+  render();
+}
+
+// ============ RUN PROGRAM (Tue=0, Sat=2 overrides) ============
+// Thursday (d=1) falls back to outdoor substitutions
+const RUN_PROGRAM = [
+  // Week 1
+  {0:{focus:"Бег: интервалы + ОФП",blocks:[
+    b("warmup","Разминка",1,0,[e("Лёгкий бег","5 мин"),e("Суставная разминка","3 мин, ноги и корпус")]),
+    b("circuit","Беговые интервалы",1,0,[
+      e("Бег / ходьба","25 мин: 2 мин бег, 1 мин ходьба","Дорожка: 1% уклон, 8-9 км/ч; Улица: лёгкий темп")
+    ]),
+    b("circuit","Силовая ОФП",2,60,[
+      e("Выпады","12 на ногу"),e("Отжимания","12-15"),e("Планка","30 сек")
+    ]),
+    b("cooldown","Заминка",1,0,[e("Растяжка","10 мин, акцент на ноги")])
+  ]},2:{focus:"Бег: длительный",blocks:[
+    b("warmup","Разминка",1,0,[e("Ходьба","5 мин")]),
+    b("circuit","Длительный бег",1,0,[
+      e("Бег / ходьба","30 мин: 3 мин бег, 1 мин ходьба","Дорожка: 1% уклон; Улица: ровная поверхность")
+    ]),
+    b("cooldown","Заминка",1,0,[e("Растяжка","10 мин")])
+  ]}},
+  // Week 2
+  {0:{focus:"Бег: горки + ОФП",blocks:[
+    b("warmup","Разминка",1,0,[e("Лёгкий бег","5 мин"),e("Суставная разминка","3 мин")]),
+    b("circuit","Бег в подъём",6,60,[
+      e("Бег в подъём","1 мин","Дорожка: 6-8% уклон, 7 км/ч; Улица: крутая горка"),
+      e("Трусца вниз","1.5 мин восстановление")
+    ]),
+    b("circuit","Силовая ОФП",2,60,[
+      e("Приседания","15"),e("Берпи","8"),e("Скалолаз","20")
+    ]),
+    b("cooldown","Заминка",1,0,[e("Растяжка","10 мин")])
+  ]},2:{focus:"Бег: длительный",blocks:[
+    b("warmup","Разминка",1,0,[e("Ходьба","5 мин")]),
+    b("circuit","Длительный бег",1,0,[
+      e("Бег / ходьба","35 мин: 4 мин бег, 1 мин ходьба","Дорожка: 1% уклон; Улица: ровная поверхность")
+    ]),
+    b("cooldown","Заминка",1,0,[e("Растяжка","10 мин")])
+  ]}},
+  // Week 3
+  {0:{focus:"Бег: темповый + ОФП",blocks:[
+    b("warmup","Разминка",1,0,[e("Лёгкий бег","5 мин"),e("Беговая СБУ","5 мин: захлёст, высокое бедро, приставной шаг")]),
+    b("circuit","Темповый бег",1,0,[
+      e("Бег в темпе","20 мин непрерывно","Дорожка: 1% уклон, 8.5-9.5 км/ч; Улица: средний темп, разговорный порог")
+    ]),
+    b("circuit","Силовая ОФП",3,60,[
+      e("Зашагивания на возвышение","10 на ногу"),e("Отжимания с хлопком","10"),e("Русский твист","20")
+    ]),
+    b("cooldown","Заминка",1,0,[e("Растяжка","10 мин")])
+  ]},2:{focus:"Бег: длительный",blocks:[
+    b("warmup","Разминка",1,0,[e("Ходьба","5 мин")]),
+    b("circuit","Длительный бег",1,0,[
+      e("Непрерывный бег","40 мин, лёгкий темп","Дорожка: 1% уклон, 7.5-8.5 км/ч; Улица: комфортный темп")
+    ]),
+    b("cooldown","Заминка",1,0,[e("Растяжка","10 мин")])
+  ]}},
+  // Week 4 (deload)
+  {0:{focus:"Бег: лёгкий (разгрузка)",blocks:[
+    b("warmup","Разминка",1,0,[e("Ходьба","5 мин")]),
+    b("circuit","Лёгкий бег",1,0,[
+      e("Лёгкий бег","20 мин, очень комфортный темп","Дорожка: 0-1% уклон; Улица: без горок")
+    ]),
+    b("circuit","Лёгкая ОФП",1,0,[
+      e("Выпады","10 на ногу"),e("Планка","30 сек"),e("Растяжка ног","5 мин")
+    ]),
+    b("cooldown","Заминка",1,0,[e("Растяжка","10 мин")])
+  ]},2:{focus:"Бег: восстановление",blocks:[
+    b("warmup","Разминка",1,0,[e("Ходьба","5 мин")]),
+    b("circuit","Восстановительный бег",1,0,[
+      e("Лёгкий бег / ходьба","25 мин","Очень лёгкий темп, пульс до 130")
+    ]),
+    b("cooldown","Заминка",1,0,[e("Растяжка","15 мин")])
+  ]}},
+  // Week 5
+  {0:{focus:"Бег: интервалы + сила",blocks:[
+    b("warmup","Разминка",1,0,[e("Лёгкий бег","5 мин"),e("Беговая СБУ","5 мин")]),
+    b("circuit","Интервалы",8,0,[
+      e("Быстрый бег","1 мин","Дорожка: 1% уклон, 10-11 км/ч; Улица: быстрый темп"),
+      e("Трусца","1.5 мин восстановление")
+    ]),
+    b("circuit","Силовая ОФП",3,60,[
+      e("Приседания с выпрыгиванием","12"),e("Выпады назад","10 на ногу"),e("Планка боковая","20 сек на сторону")
+    ]),
+    b("cooldown","Заминка",1,0,[e("Растяжка","10 мин")])
+  ]},2:{focus:"Бег: длительный",blocks:[
+    b("warmup","Разминка",1,0,[e("Ходьба","5 мин")]),
+    b("circuit","Длительный бег",1,0,[
+      e("Непрерывный бег","45 мин, лёгкий темп","Улица: по возможности с небольшими горками")
+    ]),
+    b("cooldown","Заминка",1,0,[e("Растяжка","10 мин")])
+  ]}},
+  // Week 6
+  {0:{focus:"Бег: горки + сила",blocks:[
+    b("warmup","Разминка",1,0,[e("Лёгкий бег","5 мин"),e("Суставная разминка","3 мин")]),
+    b("circuit","Горные интервалы",8,60,[
+      e("Бег в подъём","1.5 мин","Дорожка: 8-10% уклон, 7 км/ч; Улица: крутая горка"),
+      e("Трусца вниз","2 мин восстановление")
+    ]),
+    b("circuit","Силовая ОФП",3,60,[
+      e("Болгарские приседания","10 на ногу"),e("Отжимания на брусьях","10-12"),e("Подъёмы ног в висе","12")
+    ]),
+    b("cooldown","Заминка",1,0,[e("Растяжка","10 мин")])
+  ]},2:{focus:"Бег: длительный с горками",blocks:[
+    b("warmup","Разминка",1,0,[e("Ходьба","5 мин")]),
+    b("circuit","Длительный бег с рельефом",1,0,[
+      e("Бег с перепадами","50 мин","Дорожка: чередование 0-5% уклона каждые 5 мин; Улица: холмистый маршрут")
+    ]),
+    b("cooldown","Заминка",1,0,[e("Растяжка","10 мин")])
+  ]}},
+  // Week 7
+  {0:{focus:"Бег: темповый + сила",blocks:[
+    b("warmup","Разминка",1,0,[e("Лёгкий бег","5 мин"),e("Беговая СБУ","5 мин")]),
+    b("circuit","Темповый бег",1,0,[
+      e("Бег в темпе","25 мин","Дорожка: 1% уклон, 9-10 км/ч; Улица: ровный средний темп")
+    ]),
+    b("circuit","Силовая ОФП",3,60,[
+      e("Зашагивания на возвышение с рюкзаком","10 на ногу, рюкзак 5-8 кг"),
+      e("Берпи","10"),e("Скалолаз","20")
+    ]),
+    b("cooldown","Заминка",1,0,[e("Растяжка","10 мин")])
+  ]},2:{focus:"Бег: длительный",blocks:[
+    b("warmup","Разминка",1,0,[e("Ходьба","5 мин")]),
+    b("circuit","Длительный бег",1,0,[
+      e("Непрерывный бег","55 мин, лёгкий темп","Улица: включить 2-3 подъёма в маршрут")
+    ]),
+    b("cooldown","Заминка",1,0,[e("Растяжка","10 мин")])
+  ]}},
+  // Week 8 (deload)
+  {0:{focus:"Бег: лёгкий (разгрузка)",blocks:[
+    b("warmup","Разминка",1,0,[e("Ходьба","5 мин")]),
+    b("circuit","Лёгкий бег",1,0,[
+      e("Лёгкий бег","25 мин, очень комфортный темп")
+    ]),
+    b("circuit","Лёгкая ОФП",1,0,[
+      e("Выпады","10 на ногу"),e("Планка","40 сек"),e("Растяжка ног","5 мин")
+    ]),
+    b("cooldown","Заминка",1,0,[e("Растяжка","10 мин")])
+  ]},2:{focus:"Бег: восстановление",blocks:[
+    b("warmup","Разминка",1,0,[e("Ходьба","5 мин")]),
+    b("circuit","Восстановительный бег",1,0,[
+      e("Лёгкий бег / ходьба","30 мин","Пульс до 130")
+    ]),
+    b("cooldown","Заминка",1,0,[e("Растяжка","15 мин")])
+  ]}},
+  // Week 9
+  {0:{focus:"Бег: горные повторы + сила",blocks:[
+    b("warmup","Разминка",1,0,[e("Лёгкий бег","5 мин"),e("Беговая СБУ","5 мин")]),
+    b("circuit","Горные повторы",10,60,[
+      e("Бег в крутой подъём","1 мин","Дорожка: 10-12% уклон, 6.5 км/ч; Улица: максимально крутая горка"),
+      e("Трусца вниз","2 мин")
+    ]),
+    b("circuit","Силовая ОФП",3,60,[
+      e("Приседания с рюкзаком","12, рюкзак 10 кг"),e("Отжимания","15"),e("Подъёмы ног в висе","15")
+    ]),
+    b("cooldown","Заминка",1,0,[e("Растяжка","10 мин")])
+  ]},2:{focus:"Бег: длительный с рюкзаком",blocks:[
+    b("warmup","Разминка",1,0,[e("Ходьба","5 мин")]),
+    b("circuit","Длительный бег с рюкзаком",1,0,[
+      e("Бег с рюкзаком","50 мин, рюкзак 5 кг","Лёгкий темп, привыкание к весу")
+    ]),
+    b("cooldown","Заминка",1,0,[e("Растяжка","10 мин")])
+  ]}},
+  // Week 10
+  {0:{focus:"Бег: фартлек + сила",blocks:[
+    b("warmup","Разминка",1,0,[e("Лёгкий бег","5 мин"),e("Суставная разминка","3 мин")]),
+    b("circuit","Фартлек",1,0,[
+      e("Фартлек","30 мин: чередование темпа по ощущениям","Быстро 2-3 мин → легко 1-2 мин, циклами")
+    ]),
+    b("circuit","Силовая ОФП",3,60,[
+      e("Зашагивания с рюкзаком","10 на ногу, рюкзак 10 кг"),e("Берпи","10"),e("Русский твист","25")
+    ]),
+    b("cooldown","Заминка",1,0,[e("Растяжка","10 мин")])
+  ]},2:{focus:"Бег: длительный с горками",blocks:[
+    b("warmup","Разминка",1,0,[e("Ходьба","5 мин")]),
+    b("circuit","Длительный бег с рельефом",1,0,[
+      e("Бег с рюкзаком и горками","55 мин, рюкзак 5-8 кг","Дорожка: 0-8% каждые 5 мин; Улица: холмистый маршрут")
+    ]),
+    b("cooldown","Заминка",1,0,[e("Растяжка","10 мин")])
+  ]}},
+  // Week 11
+  {0:{focus:"Бег: длинные горные интервалы",blocks:[
+    b("warmup","Разминка",1,0,[e("Лёгкий бег","5 мин"),e("Беговая СБУ","5 мин")]),
+    b("circuit","Длинные горные интервалы",6,90,[
+      e("Бег в подъём","2.5 мин","Дорожка: 10-12% уклон, 6-7 км/ч; Улица: длинный подъём"),
+      e("Трусца вниз","2.5 мин")
+    ]),
+    b("circuit","Силовая ОФП",3,60,[
+      e("Болгарские приседания с рюкзаком","10 на ногу, рюкзак 8 кг"),
+      e("Отжимания на брусьях","12"),e("Планка с рюкзаком","30 сек")
+    ]),
+    b("cooldown","Заминка",1,0,[e("Растяжка","10 мин")])
+  ]},2:{focus:"Бег: длительный горный",blocks:[
+    b("warmup","Разминка",1,0,[e("Ходьба","5 мин")]),
+    b("circuit","Длительный горный бег",1,0,[
+      e("Бег с рюкзаком в горах","60 мин, рюкзак 8 кг","Дорожка: горный профиль 0-12%; Улица: максимально холмистый маршрут")
+    ]),
+    b("cooldown","Заминка",1,0,[e("Растяжка","10 мин")])
+  ]}},
+  // Week 12 (deload)
+  {0:{focus:"Бег: лёгкий (разгрузка)",blocks:[
+    b("warmup","Разминка",1,0,[e("Ходьба","5 мин")]),
+    b("circuit","Лёгкий бег",1,0,[
+      e("Лёгкий бег","25 мин, комфортный темп")
+    ]),
+    b("circuit","Лёгкая ОФП",1,0,[
+      e("Выпады","10 на ногу"),e("Планка","40 сек"),e("Растяжка ног","5 мин")
+    ]),
+    b("cooldown","Заминка",1,0,[e("Растяжка","10 мин")])
+  ]},2:{focus:"Бег: восстановление",blocks:[
+    b("warmup","Разминка",1,0,[e("Ходьба","5 мин")]),
+    b("circuit","Восстановительный бег",1,0,[
+      e("Лёгкий бег / ходьба","35 мин","Пульс до 130")
+    ]),
+    b("cooldown","Заминка",1,0,[e("Растяжка","15 мин")])
+  ]}},
+  // Week 13 (peak)
+  {0:{focus:"Бег: пиковые горные повторы",blocks:[
+    b("warmup","Разминка",1,0,[e("Лёгкий бег","5 мин"),e("Беговая СБУ","5 мин")]),
+    b("circuit","Горные повторы (пик)",12,60,[
+      e("Бег в крутой подъём","1.5 мин","Дорожка: 12-15% уклон, 6 км/ч; Улица: максимально крутая горка"),
+      e("Трусца вниз","2 мин")
+    ]),
+    b("circuit","Силовая ОФП",3,60,[
+      e("Приседания с рюкзаком","15, рюкзак 12 кг"),e("Берпи","12"),e("Подъёмы ног в висе","15")
+    ]),
+    b("cooldown","Заминка",1,0,[e("Растяжка","10 мин")])
+  ]},2:{focus:"Бег: пиковый длительный",blocks:[
+    b("warmup","Разминка",1,0,[e("Ходьба","5 мин")]),
+    b("circuit","Пиковый длительный бег",1,0,[
+      e("Бег с рюкзаком в горах","70 мин, рюкзак 10 кг","Дорожка: горный профиль; Улица: имитация похода")
+    ]),
+    b("cooldown","Заминка",1,0,[e("Растяжка","15 мин")])
+  ]}},
+  // Week 14 (peak)
+  {0:{focus:"Бег: пиковый темповый",blocks:[
+    b("warmup","Разминка",1,0,[e("Лёгкий бег","5 мин"),e("Беговая СБУ","5 мин")]),
+    b("circuit","Темповый горный бег",1,0,[
+      e("Бег в темпе с горками","35 мин","Дорожка: чередование 0% и 8-10% каждые 3 мин; Улица: холмистый маршрут, средний темп")
+    ]),
+    b("circuit","Силовая ОФП",3,60,[
+      e("Зашагивания с рюкзаком","12 на ногу, рюкзак 10 кг"),e("Отжимания","15"),e("Планка","45 сек")
+    ]),
+    b("cooldown","Заминка",1,0,[e("Растяжка","10 мин")])
+  ]},2:{focus:"Бег: пиковый длительный",blocks:[
+    b("warmup","Разминка",1,0,[e("Ходьба","5 мин")]),
+    b("circuit","Пиковый горный бег",1,0,[
+      e("Бег-поход с рюкзаком","80 мин, рюкзак 10-12 кг","Улица: полная имитация похода с подъёмами; Дорожка: горный профиль")
+    ]),
+    b("cooldown","Заминка",1,0,[e("Растяжка","15 мин")])
+  ]}},
+  // Week 15 (taper)
+  {0:{focus:"Бег: сужение",blocks:[
+    b("warmup","Разминка",1,0,[e("Лёгкий бег","5 мин")]),
+    b("circuit","Лёгкие интервалы",5,60,[
+      e("Бег в подъём","1 мин","Дорожка: 8% уклон; Улица: умеренная горка"),
+      e("Трусца","2 мин")
+    ]),
+    b("circuit","Лёгкая ОФП",1,0,[
+      e("Выпады","10 на ногу"),e("Планка","30 сек")
+    ]),
+    b("cooldown","Заминка",1,0,[e("Растяжка","15 мин")])
+  ]},2:{focus:"Бег: лёгкий длительный",blocks:[
+    b("warmup","Разминка",1,0,[e("Ходьба","5 мин")]),
+    b("circuit","Лёгкий длительный бег",1,0,[
+      e("Лёгкий бег","45 мин, комфортный темп","Без горок, без рюкзака")
+    ]),
+    b("cooldown","Заминка",1,0,[e("Растяжка","15 мин")])
+  ]}},
+  // Week 16 (taper)
+  {0:{focus:"Бег: финальная лёгкая",blocks:[
+    b("warmup","Разминка",1,0,[e("Ходьба","5 мин")]),
+    b("circuit","Лёгкий бег",1,0,[
+      e("Лёгкий бег","20 мин, минимальный темп")
+    ]),
+    b("circuit","Мобильность",1,0,[
+      e("Растяжка всего тела","15 мин")
+    ]),
+    b("cooldown","Заминка",1,0,[e("Раскатка на валике","10 мин")])
+  ]},2:{focus:"Бег: предпоходная",blocks:[
+    b("warmup","Разминка",1,0,[e("Ходьба","5 мин")]),
+    b("circuit","Финальный лёгкий бег",1,0,[
+      e("Лёгкий бег / ходьба","30 мин","Просто поддержать тонус перед походом")
+    ]),
+    b("cooldown","Заминка",1,0,[e("Растяжка","15 мин")])
+  ]}}
+];
+
+// getDayData: returns {day, isOverride} — for "run" venue, Tue/Sat use RUN_PROGRAM
+function getDayData(w, d) {
+  const venue = getDayVenue(w, d);
+  if (venue === 'run' && RUN_PROGRAM[w] && RUN_PROGRAM[w][d]) {
+    const rp = RUN_PROGRAM[w][d];
+    return {
+      day: PROGRAM[w][d].day,
+      focus: rp.focus,
+      blocks: rp.blocks,
+      isOverride: true
+    };
+  }
+  return { ...PROGRAM[w][d], isOverride: false };
+}
+
 // ============ RENDER ============
 const app = document.getElementById('app');
 
@@ -1310,6 +1942,21 @@ function renderProgram() {
       <div class="header-sub">Подготовка к походу &bull; 16 недель &bull; ${pct}% выполнено</div>
       <div class="progress-bar-wrap"><div class="progress-bar-fill" style="width:${pct}%"></div></div>
     </div>
+    <div class="profile-wrap">
+      <div class="profile-label">Формат тренировок</div>
+      <div class="profile-cards">
+        ${PROFILES.map(p => `
+          <div class="profile-card ${state.profile===p.id?'active':''}" onclick="setProfile('${p.id}')">
+            <div class="pf-icon">${p.icon}</div>
+            <div class="pf-info">
+              <div class="pf-name">${p.name}</div>
+              <div class="pf-desc">${p.desc}</div>
+            </div>
+            <div class="pf-check">${state.profile===p.id?'✓':''}</div>
+          </div>
+        `).join('')}
+      </div>
+    </div>
   `;
 
   for (let p = 0; p < 4; p++) {
@@ -1333,7 +1980,7 @@ function renderProgram() {
               <div class="card-title">Неделя ${w+1}${isDeload ? ' (разгрузка)' : ''}</div>
               <div class="card-badge" style="background:${phase.color}">${wpct}%</div>
             </div>
-            <div class="card-meta">${PROGRAM[w].map(d => d.focus).join(' &bull; ')}</div>
+            <div class="card-meta">${PROGRAM[w].map((_,di) => getDayData(w,di).focus).join(' &bull; ')}</div>
             <div class="card-progress"><div class="card-progress-fill" style="width:${wpct}%;background:${phase.color}"></div></div>
           </div>
         </div>
@@ -1370,15 +2017,17 @@ function renderWeek() {
     <div class="day-cards">
   `;
 
-  PROGRAM[w].forEach((day, di) => {
+  PROGRAM[w].forEach((_, di) => {
+    const day = getDayData(w, di);
     const dc = getDayExCount(w, di);
     const dpct = dc.total ? Math.round(dc.done / dc.total * 100) : 0;
     const isDone = dpct === 100;
+    const venueIcon = {gym:'',home:'&#127968;',outdoor:'&#127794;',run:'&#127939;'}[getDayVenue(w,di)] || '';
     html += `
       <div class="day-card fade-in" onclick="navigate('day',${w},${di})">
         <div class="day-card-header">
           <div>
-            <div class="day-card-day">${DAYS_FULL[di]}</div>
+            <div class="day-card-day">${DAYS_FULL[di]}${venueIcon?`<span class="venue-badge" style="background:var(--primary-light);color:#fff">${venueIcon}</span>`:''}</div>
             <div class="day-card-focus">${day.focus}</div>
           </div>
           <div class="day-card-status" style="background:${isDone?'var(--success)':'var(--border)'};color:${isDone?'#fff':'var(--text-muted)'}">
@@ -1400,7 +2049,8 @@ function renderWeek() {
 function renderDay() {
   const w = state.weekIdx;
   const d = state.dayIdx;
-  const day = PROGRAM[w][d];
+  const day = getDayData(w, d);
+  const venue = getDayVenue(w, d);
   const phase = PHASES[getPhase(w)];
   const dc = getDayExCount(w, d);
   const dpct = dc.total ? Math.round(dc.done / dc.total * 100) : 0;
@@ -1419,6 +2069,17 @@ function renderDay() {
     <div class="day-header">
       <div class="day-title">${day.focus}</div>
       <div class="day-focus-tag" style="background:${phase.color}20;color:${phase.color}">Фаза ${getPhase(w)+1}: ${phase.name}</div>
+    </div>
+    <div class="venue-wrap">
+      <div class="venue-label">Место тренировки</div>
+      <div class="venue-tabs">
+        <div class="venue-tab ${venue==='gym'?'active':''}" onclick="setDayVenue(${w},${d},'gym')"><span class="venue-icon">&#127947;&#65039;</span>Зал</div>
+        <div class="venue-tab ${venue==='home'?'active':''}" onclick="setDayVenue(${w},${d},'home')"><span class="venue-icon">&#127968;</span>Дома</div>
+        <div class="venue-tab ${venue==='outdoor'?'active':''}" onclick="setDayVenue(${w},${d},'outdoor')"><span class="venue-icon">&#127794;</span>Улица</div>
+        <div class="venue-tab ${venue==='run'?'active':''}" onclick="setDayVenue(${w},${d},'run')"><span class="venue-icon">&#127939;</span>Бег</div>
+      </div>
+      ${VENUE_EQUIP[venue] ? '<div class="venue-equip">'+VENUE_EQUIP[venue]+'</div>' : ''}
+      ${isDayOverridden(w,d) ? '<div class="venue-override">Переопределено для этого дня. Профиль: '+PROFILES.find(p=>p.id===state.profile).name+'</div>' : ''}
     </div>
   `;
 
@@ -1443,16 +2104,18 @@ function renderDay() {
     `;
 
     block.exercises.forEach((ex, ei) => {
+      const effectiveVenue = day.isOverride ? 'gym' : (venue === 'run' ? 'outdoor' : venue);
+      const vex = day.isOverride ? ex : getExForVenue(ex, effectiveVenue);
       const eid = exId(w, d, bi, ei);
       const done = isExDone(eid);
       html += `
         <div class="exercise ${done?'done':''}">
           <div class="ex-check ${done?'checked':''}" onclick="toggleExercise('${eid}')"></div>
-          <div class="ex-img">${getExImgHtml(ex.name)}</div>
+          <div class="ex-img">${getExImgHtml(vex.name)}</div>
           <div class="ex-body">
-            <div class="ex-name">${ex.name}</div>
-            ${ex.params ? `<div class="ex-params">${ex.params}</div>` : ''}
-            ${ex.notes ? `<div class="ex-notes">${ex.notes}</div>` : ''}
+            <div class="ex-name">${vex.name}</div>
+            ${vex.params ? `<div class="ex-params">${vex.params}</div>` : ''}
+            ${vex.notes ? `<div class="ex-notes">${vex.notes}</div>` : ''}
             ${block.rest > 0 ? `<button class="ex-rest-btn" onclick="startTimer(${block.rest},'${typeLabel}: отдых')">&#9202; Отдых ${block.rest >= 60 ? Math.floor(block.rest/60)+' мин' : block.rest+' сек'}</button>` : ''}
           </div>
         </div>
@@ -1495,7 +2158,7 @@ function toggleExercise(eid) {
 }
 
 function toggleAllDay(wIdx, dIdx) {
-  const day = PROGRAM[wIdx][dIdx];
+  const day = getDayData(wIdx, dIdx);
   const dc = getDayExCount(wIdx, dIdx);
   const allDone = dc.done === dc.total;
   day.blocks.forEach((bl, bi) => {
