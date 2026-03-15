@@ -109,6 +109,14 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;b
 .reset-wrap{padding:20px 16px;text-align:center}
 .reset-btn{background:none;border:1px solid var(--border);color:var(--text-muted);border-radius:10px;padding:10px 20px;font-size:.8rem;cursor:pointer}
 
+/* Calendar export */
+.cal-wrap{padding:0 16px 8px}
+.cal-btn{width:100%;padding:12px;border:2px solid var(--primary);border-radius:var(--radius);background:var(--card);color:var(--primary);font-size:.85rem;font-weight:700;cursor:pointer;display:flex;align-items:center;justify-content:center;gap:8px;-webkit-tap-highlight-color:transparent;transition:all .2s}
+.cal-btn:active{background:var(--primary);color:#fff}
+.cal-date-row{display:flex;align-items:center;gap:8px;margin-top:8px}
+.cal-date-row label{font-size:.78rem;color:var(--text-muted);font-weight:600;white-space:nowrap}
+.cal-date-row input{flex:1;padding:8px 10px;border:2px solid var(--border);border-radius:var(--radius);font-size:.85rem;background:var(--card);color:var(--text);font-family:inherit}
+
 /* Lightbox */
 .lightbox{position:fixed;inset:0;z-index:300;background:rgba(0,0,0,.92);display:none;flex-direction:column;align-items:center;justify-content:center;-webkit-tap-highlight-color:transparent}
 .lightbox.active{display:flex}
@@ -1989,6 +1997,15 @@ function renderProgram() {
     html += `</div>`;
   }
 
+  html += `
+    <div class="cal-wrap">
+      <div class="cal-date-row">
+        <label for="calStart">Дата начала:</label>
+        <input type="date" id="calStart" value="${new Date().toISOString().slice(0,10)}">
+      </div>
+      <button class="cal-btn" onclick="exportCalendar()" style="margin-top:8px">&#128197; Добавить в календарь (48 тренировок)</button>
+    </div>
+  `;
   html += `<div class="reset-wrap"><button class="reset-btn" onclick="resetProgress()">Сбросить прогресс</button></div>`;
   app.innerHTML = html;
 }
@@ -2178,6 +2195,65 @@ function resetProgress() {
     saveState();
     render();
   }
+}
+
+// ============ CALENDAR EXPORT ============
+function exportCalendar() {
+  const input = document.getElementById('calStart');
+  if (!input || !input.value) { alert('Выберите дату начала тренировок'); return; }
+
+  const startDate = new Date(input.value + 'T00:00:00');
+  // Find the nearest Tuesday (day 2) on or after the selected date
+  const dow = startDate.getDay(); // 0=Sun
+  const daysToTue = (2 - dow + 7) % 7;
+  const firstTue = new Date(startDate);
+  firstTue.setDate(firstTue.getDate() + daysToTue);
+
+  const DAY_OFFSETS = [0, 2, 4]; // Tue=0, Thu=+2, Sat=+4
+  const HOURS = ['18:00','18:00','10:00']; // default times: Tue 18, Thu 18, Sat 10
+  const DURATIONS = [90, 90, 90]; // minutes
+
+  function icsDate(d, time) {
+    const [h, m] = time.split(':').map(Number);
+    const dt = new Date(d);
+    dt.setHours(h, m, 0, 0);
+    return dt.toISOString().replace(/[-:]/g,'').replace(/\.\d{3}/,'');
+  }
+
+  function icsDateEnd(d, time, dur) {
+    const [h, m] = time.split(':').map(Number);
+    const dt = new Date(d);
+    dt.setHours(h, m + dur, 0, 0);
+    return dt.toISOString().replace(/[-:]/g,'').replace(/\.\d{3}/,'');
+  }
+
+  let events = '';
+  const uid = () => Math.random().toString(36).slice(2) + Date.now().toString(36);
+
+  for (let w = 0; w < 16; w++) {
+    for (let di = 0; di < 3; di++) {
+      const day = getDayData(w, di);
+      const eventDate = new Date(firstTue);
+      eventDate.setDate(firstTue.getDate() + w * 7 + DAY_OFFSETS[di]);
+
+      const venue = getDayVenue(w, di);
+      const vLabel = VENUE_LABELS[venue] || '';
+      const summary = `Тренировка: ${day.focus}`;
+      const desc = `Неделя ${w+1}, ${['Вт','Чт','Сб'][di]}\\n${vLabel}\\n\\nБлоки:\\n${day.blocks.map(bl => '- ' + bl.name + ' (' + bl.exercises.length + ' упр.)').join('\\n')}`;
+
+      events += `BEGIN:VEVENT\r\nUID:${uid()}@hiking-trainer\r\nDTSTAMP:${icsDate(new Date(),'00:00')}\r\nDTSTART:${icsDate(eventDate, HOURS[di])}\r\nDTEND:${icsDateEnd(eventDate, HOURS[di], DURATIONS[di])}\r\nSUMMARY:${summary}\r\nDESCRIPTION:${desc}\r\nBEGIN:VALARM\r\nTRIGGER:-PT1H\r\nACTION:DISPLAY\r\nDESCRIPTION:Тренировка через 1 час\r\nEND:VALARM\r\nBEGIN:VALARM\r\nTRIGGER:-PT15M\r\nACTION:DISPLAY\r\nDESCRIPTION:Тренировка через 15 минут\r\nEND:VALARM\r\nEND:VEVENT\r\n`;
+    }
+  }
+
+  const ics = `BEGIN:VCALENDAR\r\nVERSION:2.0\r\nPRODID:-//Hiking Trainer//RU\r\nCALSCALE:GREGORIAN\r\nMETHOD:PUBLISH\r\nX-WR-CALNAME:Горный тренер\r\n${events}END:VCALENDAR`;
+
+  const blob = new Blob([ics], { type: 'text/calendar;charset=utf-8' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = 'hiking-trainer.ics';
+  a.click();
+  URL.revokeObjectURL(url);
 }
 
 // ============ BACK BUTTON ============
