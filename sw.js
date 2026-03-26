@@ -1,8 +1,13 @@
-const CACHE_NAME = 'hiking-trainer-v5';
+const CACHE_NAME = 'hiking-trainer-v7';
 const CORE_ASSETS = [
   './',
   './index.html',
+  './styles.css',
+  './data.js',
+  './app.js',
+  './sw.js',
   './manifest.json',
+  './icon.svg',
   './icon-192.png',
   './icon-512.png'
 ];
@@ -57,8 +62,17 @@ self.addEventListener('fetch', e => {
     return;
   }
 
-  // Static assets (icons, manifest): cache-first
+  // Static assets: cache-first with background refresh
   e.respondWith(
-    caches.match(e.request).then(cached => cached || fetch(e.request))
+    caches.match(e.request).then(cached => {
+      const networkFetch = fetch(e.request).then(resp => {
+        if (resp.ok) {
+          const clone = resp.clone();
+          caches.open(CACHE_NAME).then(cache => cache.put(e.request, clone));
+        }
+        return resp;
+      });
+      return cached || networkFetch;
+    })
   );
 });
