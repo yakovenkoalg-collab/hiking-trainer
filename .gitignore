@@ -1,0 +1,23 @@
+# Gradle and Android
+.gradle/
+build/
+**/build/
+local.properties
+.idea/
+*.iml
+.tooling/
+
+# Signing material is local only
+.signing/
+keystore.properties
+*.jks
+*.keystore
+
+# Local exports and health data
+exports/
+backups/
+*.mountain-report.json
+*.mountain-plan.json
+
+# macOS
+.DS_Store
