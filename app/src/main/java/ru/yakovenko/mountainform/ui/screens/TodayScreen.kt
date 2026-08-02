@@ -50,6 +50,7 @@ fun TodayScreen(
     onSaveReadiness: (Int, Int, Int, Int, Int, Int, Boolean, String) -> Unit,
     onOpenSession: (String) -> Unit,
     onCompleteCorePractice: () -> Unit,
+    onShareReviewReport: () -> Unit,
 ) {
     var showCheck by remember { mutableStateOf(false) }
     val decision = state.readinessDecision
@@ -120,6 +121,20 @@ fun TodayScreen(
                         }
                         Text(session.objective, style = MaterialTheme.typography.bodyMedium)
                         Text("${session.durationMinutes} мин · целевой RPE ${session.targetRpe}", style = MaterialTheme.typography.labelLarge)
+                    }
+                }
+            }
+        }
+        state.reviewCheckpoints.firstOrNull { it.status != ru.yakovenko.mountainform.data.ReviewStatus.RESOLVED }?.let { checkpoint ->
+            item { SectionTitle("Контрольная точка плана") }
+            item {
+                Card(colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.secondaryContainer)) {
+                    Column(Modifier.fillMaxWidth().padding(18.dp), verticalArrangement = Arrangement.spacedBy(9.dp)) {
+                        Text(checkpoint.reason, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+                        Text("Сформируйте отчёт, отправьте его в этот чат и импортируйте предложенный JSON только после просмотра изменений.")
+                        Button(onClick = onShareReviewReport, modifier = Modifier.fillMaxWidth()) {
+                            Text(if (checkpoint.status == ru.yakovenko.mountainform.data.ReviewStatus.EXPORTED) "Поделиться отчётом снова" else "Сформировать и поделиться")
+                        }
                     }
                 }
             }

@@ -14,6 +14,8 @@ import androidx.health.connect.client.records.WeightRecord
 import androidx.health.connect.client.request.ReadRecordsRequest
 import androidx.health.connect.client.request.AggregateRequest
 import androidx.health.connect.client.time.TimeRangeFilter
+import ru.yakovenko.mountainform.data.ActivitySourceType
+import ru.yakovenko.mountainform.data.ImportedActivityEntity
 import java.time.Duration
 import java.time.Instant
 import java.time.temporal.ChronoUnit
@@ -139,5 +141,64 @@ class HealthConnectManager(private val context: Context) {
                 error = error.message ?: "Не удалось прочитать Health Connect",
             )
         }
+    }
+
+    suspend fun readActivities(windowDays: Int = 30): List<ImportedActivityEntity> {
+        if (availability() != HealthAvailability.AVAILABLE) return emptyList()
+        val client = HealthConnectClient.getOrCreate(context)
+        val granted = client.permissionController.getGrantedPermissions()
+        if (!granted.containsAll(permissions)) return emptyList()
+        val end = Instant.now()
+        val start = end.minus(windowDays.coerceIn(7, 90).toLong(), ChronoUnit.DAYS)
+        val sessions = client.readRecords(
+            ReadRecordsRequest(
+                recordType = ExerciseSessionRecord::class,
+                timeRangeFilter = TimeRangeFilter.between(start, end),
+                ascendingOrder = false,
+                pageSize = 50,
+            ),
+        ).records
+        val now = System.currentTimeMillis()
+        return sessions.map { exercise ->
+            val range = TimeRangeFilter.between(exercise.startTime, exercise.endTime)
+            val aggregate = client.aggregate(
+                AggregateRequest(
+                    metrics = setOf(
+                        DistanceRecord.DISTANCE_TOTAL,
+                        ElevationGainedRecord.ELEVATION_GAINED_TOTAL,
+                        HeartRateRecord.BPM_AVG,
+                        HeartRateRecord.BPM_MAX,
+                    ),
+                    timeRangeFilter = range,
+                    dataOriginFilter = setOf(exercise.metadata.dataOrigin),
+                ),
+            )
+            val sourceId = exercise.metadata.id
+            ImportedActivityEntity(
+                id = "health-connect-$sourceId",
+                sourceRecordId = sourceId,
+                sourceType = ActivitySourceType.HEALTH_CONNECT,
+                sourcePackage = exercise.metadata.dataOrigin.packageName,
+                title = exercise.title?.takeIf { it.isNotBlank() } ?: "Тренировка Garmin",
+                activityType = exerciseTypeLabel(exercise.exerciseType),
+                startAtEpochMillis = exercise.startTime.toEpochMilli(),
+                endAtEpochMillis = exercise.endTime.toEpochMilli(),
+                durationSeconds = Duration.between(exercise.startTime, exercise.endTime).seconds,
+                distanceMeters = aggregate[DistanceRecord.DISTANCE_TOTAL]?.inMeters,
+                elevationMeters = aggregate[ElevationGainedRecord.ELEVATION_GAINED_TOTAL]?.inMeters,
+                averageHeartRate = aggregate[HeartRateRecord.BPM_AVG]?.toDouble(),
+                maxHeartRate = aggregate[HeartRateRecord.BPM_MAX]?.toDouble(),
+                importedAtEpochMillis = now,
+            )
+        }
+    }
+
+    private fun exerciseTypeLabel(type: Int): String = when (type) {
+        ExerciseSessionRecord.EXERCISE_TYPE_RUNNING -> "Бег"
+        ExerciseSessionRecord.EXERCISE_TYPE_WALKING -> "Ходьба"
+        ExerciseSessionRecord.EXERCISE_TYPE_HIKING -> "Поход"
+        ExerciseSessionRecord.EXERCISE_TYPE_BIKING -> "Велосипед"
+        ExerciseSessionRecord.EXERCISE_TYPE_STRENGTH_TRAINING -> "Силовая"
+        else -> "Активность $type"
     }
 }

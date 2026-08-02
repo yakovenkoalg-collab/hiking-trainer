@@ -1,5 +1,6 @@
 package ru.yakovenko.mountainform.ui
 
+import android.content.Intent
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ShowChart
 import androidx.compose.material.icons.filled.DateRange
@@ -22,6 +23,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.platform.LocalContext
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.navigation.NavGraph.Companion.findStartDestination
 import androidx.navigation.compose.NavHost
@@ -29,6 +31,7 @@ import androidx.navigation.compose.composable
 import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
 import ru.yakovenko.mountainform.ui.screens.AboutScreen
+import ru.yakovenko.mountainform.ui.screens.ActivitiesScreen
 import ru.yakovenko.mountainform.ui.screens.CalendarScreen
 import ru.yakovenko.mountainform.ui.screens.DataSyncScreen
 import ru.yakovenko.mountainform.ui.screens.HealthSettingsScreen
@@ -50,7 +53,7 @@ private val destinations = listOf(
 )
 
 private val detailRoutes = setOf(
-    "profile-settings", "health-settings", "sync-settings", "posture", "reminders", "about",
+    "profile-settings", "health-settings", "sync-settings", "posture", "reminders", "about", "activities",
 )
 
 @Composable
@@ -66,6 +69,8 @@ fun MountainFormApp(
     val backupPreview by viewModel.backupPreview.collectAsStateWithLifecycle()
     val message by viewModel.message.collectAsStateWithLifecycle()
     val updateState by viewModel.updateState.collectAsStateWithLifecycle()
+    val yandexConnected by viewModel.yandexConnected.collectAsStateWithLifecycle()
+    val context = LocalContext.current
     val navController = rememberNavController()
     val backStack by navController.currentBackStackEntryAsState()
     val currentRoute = backStack?.destination?.route.orEmpty()
@@ -111,6 +116,16 @@ fun MountainFormApp(
                     onSaveReadiness = viewModel::saveReadiness,
                     onOpenSession = { navController.navigate("session/$it") },
                     onCompleteCorePractice = viewModel::completeCorePractice,
+                    onShareReviewReport = {
+                        viewModel.exportReport { report ->
+                            val intent = Intent(Intent.ACTION_SEND).apply {
+                                type = "application/json"
+                                putExtra(Intent.EXTRA_SUBJECT, "Горная форма — контрольная точка")
+                                putExtra(Intent.EXTRA_TEXT, report)
+                            }
+                            context.startActivity(Intent.createChooser(intent, "Отправить отчёт"))
+                        }
+                    },
                 )
             }
             composable("calendar") {
@@ -128,6 +143,7 @@ fun MountainFormApp(
                     state = state,
                     healthSummary = healthSummary,
                     onSaveBodyMetric = viewModel::saveBodyMetric,
+                    onOpenActivities = { navController.navigate("activities") },
                 )
             }
             composable("more") {
@@ -160,6 +176,16 @@ fun MountainFormApp(
                     onRefresh = viewModel::refreshHealth,
                     onWindowChange = viewModel::setHealthWindow,
                     onShowPrivacy = { showPrivacyPolicy = true },
+                    onImportFit = viewModel::importFit,
+                )
+            }
+            composable("activities") {
+                ActivitiesScreen(
+                    activities = state.importedActivities,
+                    sessions = state.sessions,
+                    onBack = { navController.popBackStack() },
+                    onLinkActivity = viewModel::linkActivity,
+                    onIgnoreActivity = viewModel::ignoreActivity,
                 )
             }
             composable("sync-settings") {
@@ -171,6 +197,21 @@ fun MountainFormApp(
                     onSync = viewModel::syncSharedFolder,
                     onCreateBackup = viewModel::createSharedBackup,
                     onRestoreBackup = viewModel::previewBackup,
+                    yandexConnected = yandexConnected,
+                    onConnectYandex = viewModel::connectYandex,
+                    onDisconnectYandex = viewModel::disconnectYandex,
+                    onSyncYandex = viewModel::syncYandex,
+                    onCreateYandexBackup = viewModel::createYandexBackup,
+                    onShareReport = {
+                        viewModel.exportReport { report ->
+                            val intent = Intent(Intent.ACTION_SEND).apply {
+                                type = "application/json"
+                                putExtra(Intent.EXTRA_SUBJECT, "Горная форма — отчёт для корректировки плана")
+                                putExtra(Intent.EXTRA_TEXT, report)
+                            }
+                            context.startActivity(Intent.createChooser(intent, "Поделиться отчётом"))
+                        }
+                    },
                 )
             }
             composable("posture") {
@@ -207,11 +248,13 @@ fun MountainFormApp(
                     steps = session?.let(viewModel::steps).orEmpty(),
                     catalog = state.exerciseCatalog,
                     stepLogs = state.stepLogs,
+                    setLogs = state.setLogs,
                     shoulderRestrictionActive = state.profile?.shoulderRestrictionActive == true,
                     loadBlocked = state.readinessDecision.level == ru.yakovenko.mountainform.domain.ReadinessLevel.RED,
                     adaptationRequired = state.readinessDecision.level == ru.yakovenko.mountainform.domain.ReadinessLevel.YELLOW,
                     readinessRecommendation = state.readinessDecision.recommendation,
                     onStepCompleted = viewModel::setStepCompleted,
+                    onSaveSetLog = viewModel::saveSetLog,
                     onBack = { navController.popBackStack() },
                     onComplete = { sessionId, rpe, notes ->
                         viewModel.completeSession(sessionId, rpe, notes)

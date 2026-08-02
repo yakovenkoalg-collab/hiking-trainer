@@ -1,5 +1,7 @@
 package ru.yakovenko.mountainform.ui.screens
 
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
@@ -44,7 +46,11 @@ fun HealthSettingsScreen(
     onRefresh: () -> Unit,
     onWindowChange: (Int) -> Unit,
     onShowPrivacy: () -> Unit,
+    onImportFit: (android.net.Uri) -> Unit,
 ) {
+    val fitPicker = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
+        if (uri != null) onImportFit(uri)
+    }
     Scaffold(
         topBar = {
             TopAppBar(
@@ -142,6 +148,19 @@ fun HealthSettingsScreen(
                         "Приложение не получает пароль Garmin.",
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+            item { SectionTitle("Дополнительный импорт FIT") }
+            item {
+                OutlinedButton(
+                    onClick = { fitPicker.launch(arrayOf("application/octet-stream", "application/vnd.ant.fit", "*/*")) },
+                    modifier = Modifier.fillMaxWidth(),
+                ) { Text("Импортировать файл .FIT") }
+            }
+            item {
+                Text(
+                    "FIT нужен, если Health Connect не передал набор высоты, пульс, мощность или каденс. Повторный импорт не создаёт дубликат.",
+                    style = MaterialTheme.typography.bodySmall,
                 )
             }
             item { TextButton(onClick = onShowPrivacy) { Text("Как используются данные") } }

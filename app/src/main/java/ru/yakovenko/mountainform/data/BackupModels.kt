@@ -4,7 +4,7 @@ import kotlinx.serialization.Serializable
 
 @Serializable
 data class BackupEnvelope(
-    val schemaVersion: Int = 1,
+    val schemaVersion: Int = 2,
     val generatedAtEpochMillis: Long,
     val profile: UserProfileEntity,
     val goals: List<GoalEventEntity>,
@@ -17,6 +17,9 @@ data class BackupEnvelope(
     val stepLogs: List<SessionStepLogEntity>,
     val postureAssessments: List<PostureAssessmentEntity>,
     val preferences: AppSettingsEntity,
+    val setLogs: List<SessionSetLogEntity> = emptyList(),
+    val reviewCheckpoints: List<ReviewCheckpointEntity> = emptyList(),
+    val importedActivities: List<ImportedActivityEntity> = emptyList(),
 )
 
 data class BackupPreview(

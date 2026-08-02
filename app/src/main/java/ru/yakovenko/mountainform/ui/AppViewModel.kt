@@ -10,6 +10,8 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 import ru.yakovenko.mountainform.data.BodyMetricEntity
 import ru.yakovenko.mountainform.data.BackupPreview
 import ru.yakovenko.mountainform.data.AppSettingsEntity
@@ -22,6 +24,9 @@ import ru.yakovenko.mountainform.data.PostureAssessmentEntity
 import ru.yakovenko.mountainform.data.ReadinessCheckEntity
 import ru.yakovenko.mountainform.data.RescheduleEventEntity
 import ru.yakovenko.mountainform.data.SessionStepLogEntity
+import ru.yakovenko.mountainform.data.SessionSetLogEntity
+import ru.yakovenko.mountainform.data.ReviewCheckpointEntity
+import ru.yakovenko.mountainform.data.ImportedActivityEntity
 import ru.yakovenko.mountainform.data.TrainingSessionEntity
 import ru.yakovenko.mountainform.data.UserProfileEntity
 import ru.yakovenko.mountainform.domain.ReadinessDecision
@@ -29,8 +34,12 @@ import ru.yakovenko.mountainform.domain.ReadinessLevel
 import ru.yakovenko.mountainform.domain.TrainingSafety
 import ru.yakovenko.mountainform.health.HealthConnectManager
 import ru.yakovenko.mountainform.health.HealthSummary
+import ru.yakovenko.mountainform.health.FitActivityImporter
 import ru.yakovenko.mountainform.reminders.ReminderScheduler
 import ru.yakovenko.mountainform.sync.SharedFolderSyncManager
+import ru.yakovenko.mountainform.sync.SecureTokenStore
+import ru.yakovenko.mountainform.sync.YandexDiskSyncManager
+import ru.yakovenko.mountainform.sync.YandexSyncWorker
 import ru.yakovenko.mountainform.update.AppUpdateManager
 import ru.yakovenko.mountainform.update.UpdateState
 import java.time.LocalDate
@@ -47,6 +56,9 @@ data class AppUiState(
     val rescheduleEvents: List<RescheduleEventEntity> = emptyList(),
     val postureAssessments: List<PostureAssessmentEntity> = emptyList(),
     val stepLogs: List<SessionStepLogEntity> = emptyList(),
+    val setLogs: List<SessionSetLogEntity> = emptyList(),
+    val reviewCheckpoints: List<ReviewCheckpointEntity> = emptyList(),
+    val importedActivities: List<ImportedActivityEntity> = emptyList(),
 ) {
     val todayCheck: ReadinessCheckEntity?
         get() = readiness.firstOrNull { it.epochDay == LocalDate.now().toEpochDay() }
@@ -66,6 +78,9 @@ class AppViewModel(
     private val appUpdateManager: AppUpdateManager,
     private val reminderScheduler: ReminderScheduler,
     private val sharedFolderSyncManager: SharedFolderSyncManager,
+    private val yandexDiskSyncManager: YandexDiskSyncManager,
+    private val secureTokenStore: SecureTokenStore,
+    private val fitActivityImporter: FitActivityImporter,
 ) : ViewModel() {
     private val trainingState = combine(
         repository.profile,
@@ -97,7 +112,19 @@ class AppViewModel(
         ExtendedState(exerciseCatalog, settings, rescheduleEvents, postureAssessments, stepLogs)
     }
 
-    val uiState: StateFlow<AppUiState> = combine(trainingState, wellnessState, extendedState) { training, wellness, extended ->
+    private data class ActivityState(
+        val setLogs: List<SessionSetLogEntity>,
+        val reviewCheckpoints: List<ReviewCheckpointEntity>,
+        val importedActivities: List<ImportedActivityEntity>,
+    )
+
+    private val activityState = combine(
+        repository.setLogs,
+        repository.reviewCheckpoints,
+        repository.importedActivities,
+    ) { setLogs, checkpoints, activities -> ActivityState(setLogs, checkpoints, activities) }
+
+    val uiState: StateFlow<AppUiState> = combine(trainingState, wellnessState, extendedState, activityState) { training, wellness, extended, activity ->
         AppUiState(
             profile = training.first,
             goals = training.second,
@@ -110,6 +137,9 @@ class AppViewModel(
             rescheduleEvents = extended.rescheduleEvents,
             postureAssessments = extended.postureAssessments,
             stepLogs = extended.stepLogs,
+            setLogs = activity.setLogs,
+            reviewCheckpoints = activity.reviewCheckpoints,
+            importedActivities = activity.importedActivities,
         )
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), AppUiState())
 
@@ -118,8 +148,10 @@ class AppViewModel(
     val backupPreview = MutableStateFlow<BackupPreview?>(null)
     val message = MutableStateFlow<String?>(null)
     val updateState = MutableStateFlow(UpdateState())
+    val yandexConnected = MutableStateFlow(secureTokenStore.hasToken())
     private var pendingSharedPlanName: String? = null
     private var pendingSharedPlanJson: String? = null
+    private var pendingPlanFromYandex: Boolean = false
 
     init {
         viewModelScope.launch {
@@ -211,6 +243,32 @@ class AppViewModel(
         viewModelScope.launch { repository.setStepCompleted(sessionId, stepId, completed) }
     }
 
+    fun saveSetLog(log: SessionSetLogEntity) {
+        viewModelScope.launch { repository.saveSetLog(log) }
+    }
+
+    fun importFit(uri: Uri) {
+        viewModelScope.launch {
+            runCatching { withContext(Dispatchers.IO) { fitActivityImporter.import(uri) } }
+                .onSuccess {
+                    repository.upsertImportedActivities(it)
+                    message.value = "FIT импортирован: ${it.size} активност${if (it.size == 1) "ь" else "и"}"
+                }
+                .onFailure { message.value = it.message ?: "Не удалось импортировать FIT" }
+        }
+    }
+
+    fun linkActivity(activityId: String, sessionId: String?) {
+        viewModelScope.launch {
+            repository.linkActivity(activityId, sessionId)
+            message.value = if (sessionId == null) "Связь удалена" else "Активность связана с планом"
+        }
+    }
+
+    fun ignoreActivity(activityId: String) {
+        viewModelScope.launch { repository.ignoreActivity(activityId) }
+    }
+
     fun savePostureAssessment(selfRating: Int, notes: String, photoUris: List<String?>) {
         viewModelScope.launch {
             val now = System.currentTimeMillis()
@@ -235,7 +293,67 @@ class AppViewModel(
         viewModelScope.launch {
             repository.updateSettings(settings)
             reminderScheduler.update(settings)
+            if (settings.automaticSync && settings.yandexSyncEnabled) {
+                YandexSyncWorker.enqueue(reminderScheduler.context)
+            }
             message.value = "Настройки сохранены"
+        }
+    }
+
+    fun connectYandex(token: String, rootPath: String) {
+        viewModelScope.launch {
+            runCatching { yandexDiskSyncManager.connect(token, rootPath) }
+                .onSuccess {
+                    val current = uiState.value.settings ?: AppSettingsEntity()
+                    repository.updateSettings(
+                        current.copy(
+                            yandexSyncEnabled = true,
+                            yandexRootPath = rootPath,
+                            yandexAccountLabel = "OAuth подключён",
+                            lastSyncMessage = it,
+                        ),
+                    )
+                    yandexConnected.value = true
+                    message.value = it
+                }
+                .onFailure { message.value = it.message ?: "Не удалось подключить Яндекс Диск" }
+        }
+    }
+
+    fun disconnectYandex() {
+        viewModelScope.launch {
+            yandexDiskSyncManager.disconnect()
+            val current = uiState.value.settings ?: AppSettingsEntity()
+            repository.updateSettings(current.copy(yandexSyncEnabled = false, yandexAccountLabel = ""))
+            yandexConnected.value = false
+            message.value = "Яндекс Диск отключён; локальные данные сохранены"
+        }
+    }
+
+    fun syncYandex() {
+        val current = uiState.value.settings ?: AppSettingsEntity()
+        viewModelScope.launch {
+            runCatching { yandexDiskSyncManager.sync(current.yandexRootPath) }
+                .onSuccess { result ->
+                    pendingSharedPlanName = result.pendingPlanName
+                    pendingSharedPlanJson = result.pendingPlanJson
+                    pendingPlanFromYandex = result.pendingPlanJson != null
+                    repository.updateSettings(
+                        current.copy(lastSyncAtEpochMillis = System.currentTimeMillis(), lastSyncMessage = result.message),
+                    )
+                    result.pendingPlanJson?.let(::previewImport)
+                    message.value = result.message
+                }
+                .onFailure { message.value = it.message ?: "Ошибка Яндекс Диска" }
+        }
+    }
+
+    fun createYandexBackup() {
+        val current = uiState.value.settings ?: AppSettingsEntity()
+        viewModelScope.launch {
+            runCatching { yandexDiskSyncManager.createBackup(current.yandexRootPath) }
+                .onSuccess { message.value = "Резервная копия $it создана на Яндекс Диске" }
+                .onFailure { message.value = it.message ?: "Не удалось создать копию" }
         }
     }
 
@@ -374,11 +492,17 @@ class AppViewModel(
                     val name = pendingSharedPlanName
                     val raw = pendingSharedPlanJson
                     val folder = uiState.value.settings?.sharedFolderUri?.let(Uri::parse)
-                    if (name != null && raw != null && folder != null) {
-                        runCatching { sharedFolderSyncManager.archiveAppliedPlan(folder, name, raw) }
+                    if (name != null && raw != null) {
+                        if (pendingPlanFromYandex) {
+                            val root = uiState.value.settings?.yandexRootPath ?: AppSettingsEntity().yandexRootPath
+                            runCatching { yandexDiskSyncManager.archiveAppliedPlan(root, name, raw) }
+                        } else if (folder != null) {
+                            runCatching { sharedFolderSyncManager.archiveAppliedPlan(folder, name, raw) }
+                        }
                     }
                     pendingSharedPlanName = null
                     pendingSharedPlanJson = null
+                    pendingPlanFromYandex = false
                 }
                 .onFailure { message.value = it.message ?: "План не применён" }
         }
@@ -389,6 +513,12 @@ class AppViewModel(
     }
 
     fun proposeNextBaseBlock() {
+        if (uiState.value.reviewCheckpoints.any {
+                it.status != ru.yakovenko.mountainform.data.ReviewStatus.RESOLVED && it.reason.contains("боль", ignoreCase = true)
+            }) {
+            message.value = "После отметки боли новый блок не формируется автоматически — сначала разберите контрольный отчёт"
+            return
+        }
         if (uiState.value.readinessDecision.level != ReadinessLevel.GREEN) {
             message.value = "Перед новым блоком отметьте хорошее самочувствие; при боли нагрузку не увеличиваем"
             return
@@ -406,6 +536,10 @@ class AppViewModel(
 
     private suspend fun automaticSyncIfEnabled() {
         val current = uiState.value.settings ?: return
+        if (current.automaticSync && current.yandexSyncEnabled && secureTokenStore.hasToken()) {
+            YandexSyncWorker.enqueue(reminderScheduler.context)
+            return
+        }
         val uri = current.sharedFolderUri?.let(Uri::parse) ?: return
         if (!current.automaticSync) return
         runCatching { sharedFolderSyncManager.sync(uri) }
@@ -429,7 +563,10 @@ class AppViewModel(
 
     fun refreshHealth() {
         viewModelScope.launch {
-            healthSummary.value = healthConnectManager.readSummary(uiState.value.settings?.healthWindowDays ?: 30)
+            val days = uiState.value.settings?.healthWindowDays ?: 30
+            healthSummary.value = healthConnectManager.readSummary(days)
+            runCatching { healthConnectManager.readActivities(days) }
+                .onSuccess { repository.upsertImportedActivities(it) }
         }
     }
 
@@ -484,9 +621,21 @@ class AppViewModel(
         private val appUpdateManager: AppUpdateManager,
         private val reminderScheduler: ReminderScheduler,
         private val sharedFolderSyncManager: SharedFolderSyncManager,
+        private val yandexDiskSyncManager: YandexDiskSyncManager,
+        private val secureTokenStore: SecureTokenStore,
+        private val fitActivityImporter: FitActivityImporter,
     ) : ViewModelProvider.Factory {
         @Suppress("UNCHECKED_CAST")
         override fun <T : ViewModel> create(modelClass: Class<T>): T =
-            AppViewModel(repository, healthConnectManager, appUpdateManager, reminderScheduler, sharedFolderSyncManager) as T
+            AppViewModel(
+                repository,
+                healthConnectManager,
+                appUpdateManager,
+                reminderScheduler,
+                sharedFolderSyncManager,
+                yandexDiskSyncManager,
+                secureTokenStore,
+                fitActivityImporter,
+            ) as T
     }
 }

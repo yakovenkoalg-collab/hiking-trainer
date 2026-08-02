@@ -34,6 +34,9 @@ class MountainFormRepository(
     val rescheduleEvents: Flow<List<RescheduleEventEntity>> = dao.observeRescheduleEvents()
     val postureAssessments: Flow<List<PostureAssessmentEntity>> = dao.observePostureAssessments()
     val stepLogs: Flow<List<SessionStepLogEntity>> = dao.observeStepLogs()
+    val setLogs: Flow<List<SessionSetLogEntity>> = dao.observeSetLogs()
+    val reviewCheckpoints: Flow<List<ReviewCheckpointEntity>> = dao.observeReviewCheckpoints()
+    val importedActivities: Flow<List<ImportedActivityEntity>> = dao.observeImportedActivities()
 
     suspend fun initialize() {
         val now = System.currentTimeMillis()
@@ -84,6 +87,7 @@ class MountainFormRepository(
         if (dao.getExerciseCatalog().isEmpty()) {
             dao.upsertExerciseCatalog(seedExerciseCatalog(json))
         }
+        maybeCreateReviewCheckpoint()
     }
 
     suspend fun saveReadiness(check: ReadinessCheckEntity) = dao.upsertReadiness(check)
@@ -96,6 +100,8 @@ class MountainFormRepository(
     suspend fun updateGoal(goal: GoalEventEntity) = dao.upsertGoal(goal)
 
     suspend fun updateSettings(settings: AppSettingsEntity) = dao.upsertSettings(settings)
+
+    suspend fun currentSettings(): AppSettingsEntity = dao.getSettings() ?: AppSettingsEntity()
 
     suspend fun savePostureAssessment(assessment: PostureAssessmentEntity) =
         dao.upsertPostureAssessment(assessment)
@@ -110,6 +116,14 @@ class MountainFormRepository(
             ),
         )
     }
+
+    suspend fun saveSetLog(log: SessionSetLogEntity) {
+        dao.upsertSetLog(log)
+        if (log.pain) maybeCreateReviewCheckpoint("Отмечена боль во время тренировки", force = true)
+    }
+
+    fun observeSetLogs(sessionId: String): Flow<List<SessionSetLogEntity>> =
+        dao.observeSetLogs(sessionId)
 
     fun observeStepLogs(sessionId: String): Flow<List<SessionStepLogEntity>> =
         dao.observeStepLogs(sessionId)
@@ -160,6 +174,7 @@ class MountainFormRepository(
                 completionNotes = notes.trim(),
             ),
         )
+        maybeCreateReviewCheckpoint()
     }
 
     suspend fun skipSession(id: String, reason: String) {
@@ -180,6 +195,12 @@ class MountainFormRepository(
         val start = today.minusDays(13).toEpochDay()
         val end = today.toEpochDay()
         val profile = requireNotNull(dao.getProfile())
+        val allSessions = dao.getSessions()
+        val sessionsById = allSessions.associateBy { it.id }
+        val checkpoint = dao.getReviewCheckpoints().firstOrNull { it.status != ReviewStatus.RESOLVED }
+        val checkpointSessionIds = checkpoint?.let {
+            runCatching { json.decodeFromString<List<String>>(it.completedSessionIdsJson) }.getOrDefault(emptyList())
+        }.orEmpty()
         val report = ReportEnvelope(
             generatedAtEpochMillis = System.currentTimeMillis(),
             periodStartEpochDay = start,
@@ -197,7 +218,7 @@ class MountainFormRepository(
             goals = dao.getGoals().map {
                 ReportGoal(it.type, it.title, it.targetEpochDay, it.distanceKm, it.status)
             },
-            sessions = dao.getSessions().filter { it.plannedEpochDay in start..end }.map {
+            sessions = allSessions.filter { it.plannedEpochDay in start..end }.map {
                 ReportSession(
                     plannedEpochDay = it.plannedEpochDay,
                     title = it.title,
@@ -223,7 +244,49 @@ class MountainFormRepository(
             bodyMetrics = dao.getBodyMetrics().filter { it.epochDay in start..end }.map {
                 ReportBodyMetric(it.epochDay, it.weightKg, it.waistCm)
             },
+            setLogs = dao.getSetLogs().filter { log ->
+                sessionsById[log.sessionId]?.plannedEpochDay in start..end
+            }.map {
+                ReportSetLog(
+                    sessionId = it.sessionId,
+                    stepId = it.stepId,
+                    roundIndex = it.roundIndex,
+                    setIndex = it.setIndex,
+                    plannedReps = it.plannedReps,
+                    actualReps = it.actualReps,
+                    loadKg = it.loadKg,
+                    actualRpe = it.actualRpe,
+                    rir = it.rir,
+                    pain = it.pain,
+                    painNote = it.painNote,
+                    elapsedSeconds = it.elapsedSeconds,
+                )
+            },
+            activities = dao.getImportedActivities().filter {
+                java.time.Instant.ofEpochMilli(it.startAtEpochMillis)
+                    .atZone(java.time.ZoneId.systemDefault()).toLocalDate().toEpochDay() in start..end
+            }.map {
+                ReportActivity(
+                    id = it.id,
+                    sourceType = it.sourceType,
+                    title = it.title,
+                    activityType = it.activityType,
+                    startAtEpochMillis = it.startAtEpochMillis,
+                    durationSeconds = it.durationSeconds,
+                    distanceMeters = it.distanceMeters,
+                    elevationMeters = it.elevationMeters,
+                    averageHeartRate = it.averageHeartRate,
+                    maxHeartRate = it.maxHeartRate,
+                    linkedSessionId = it.linkedSessionId,
+                )
+            },
+            checkpoint = checkpoint?.let { ReportCheckpoint(it.id, it.reason, checkpointSessionIds) },
         )
+        checkpoint?.let {
+            if (it.status == ReviewStatus.PENDING) {
+                dao.upsertReviewCheckpoint(it.copy(status = ReviewStatus.EXPORTED, exportedAtEpochMillis = System.currentTimeMillis()))
+            }
+        }
         return json.encodeToString(report)
     }
 
@@ -243,11 +306,16 @@ class MountainFormRepository(
             postureAssessments = dao.getPostureAssessments().map {
                 it.copy(frontPhotoUri = null, sidePhotoUri = null, backPhotoUri = null)
             },
+            setLogs = dao.getSetLogs(),
+            reviewCheckpoints = dao.getReviewCheckpoints(),
+            importedActivities = dao.getImportedActivities(),
             preferences = settings.copy(
                 sharedFolderUri = null,
                 sharedFolderName = null,
                 lastSyncAtEpochMillis = null,
                 lastSyncMessage = "Общая папка не выбрана",
+                yandexSyncEnabled = false,
+                yandexAccountLabel = "",
             ),
         )
         return json.encodeToString(backup)
@@ -255,7 +323,7 @@ class MountainFormRepository(
 
     suspend fun previewBackup(rawJson: String): BackupPreview {
         val backup = json.decodeFromString<BackupEnvelope>(rawJson)
-        require(backup.schemaVersion == 1) { "Неподдерживаемая версия резервной копии" }
+        require(backup.schemaVersion in 1..2) { "Неподдерживаемая версия резервной копии" }
         val existing = dao.getSessions().associateBy { it.id }
         return BackupPreview(
             backup = backup,
@@ -289,6 +357,9 @@ class MountainFormRepository(
         val rescheduleKeys = dao.getRescheduleEvents().mapTo(mutableSetOf()) { it.id }
         val stepKeys = dao.getStepLogs().mapTo(mutableSetOf()) { it.sessionId to it.stepId }
         val postureKeys = dao.getPostureAssessments().mapTo(mutableSetOf()) { it.id }
+        val setKeys = dao.getSetLogs().mapTo(mutableSetOf()) { listOf(it.sessionId, it.stepId, it.roundIndex, it.setIndex) }
+        val checkpointKeys = dao.getReviewCheckpoints().mapTo(mutableSetOf()) { it.id }
+        val activityKeys = dao.getImportedActivities().mapTo(mutableSetOf()) { it.id }
         val currentSettings = dao.getSettings() ?: AppSettingsEntity()
         dao.mergeBackup(
             profile = backup.profile,
@@ -301,11 +372,17 @@ class MountainFormRepository(
             rescheduleEvents = backup.rescheduleEvents.filter { it.id !in rescheduleKeys },
             stepLogs = backup.stepLogs.filter { (it.sessionId to it.stepId) !in stepKeys },
             postureAssessments = backup.postureAssessments.filter { it.id !in postureKeys },
+            setLogs = backup.setLogs.filter { listOf(it.sessionId, it.stepId, it.roundIndex, it.setIndex) !in setKeys },
+            reviewCheckpoints = backup.reviewCheckpoints.filter { it.id !in checkpointKeys },
+            importedActivities = backup.importedActivities.filter { it.id !in activityKeys },
             settings = backup.preferences.copy(
                 sharedFolderUri = currentSettings.sharedFolderUri,
                 sharedFolderName = currentSettings.sharedFolderName,
                 lastSyncAtEpochMillis = currentSettings.lastSyncAtEpochMillis,
                 lastSyncMessage = currentSettings.lastSyncMessage,
+                yandexSyncEnabled = currentSettings.yandexSyncEnabled,
+                yandexRootPath = currentSettings.yandexRootPath,
+                yandexAccountLabel = currentSettings.yandexAccountLabel,
             ),
         )
     }
@@ -319,7 +396,12 @@ class MountainFormRepository(
         val conflicts = plan.sessions.flatMap { session ->
             session.steps.mapNotNull { step ->
                 val shoulderConflict = profile.shoulderRestrictionActive &&
-                    step.restrictionTags.any { it in SHOULDER_RESTRICTION_TAGS }
+                    (
+                        step.restrictionTags.any { it in SHOULDER_RESTRICTION_TAGS } ||
+                            SHOULDER_RISK_WORDS.any { word ->
+                                "${step.title} ${step.instructions}".lowercase().contains(word)
+                            }
+                        )
                 if (shoulderConflict) "${session.title}: ${step.title} конфликтует с ограничением плеча" else null
             }
         }
@@ -364,6 +446,87 @@ class MountainFormRepository(
                 applied = true,
             ),
         )
+        dao.getReviewCheckpoints().firstOrNull { it.status != ReviewStatus.RESOLVED }?.let {
+            dao.upsertReviewCheckpoint(
+                it.copy(status = ReviewStatus.RESOLVED, resolvedAtEpochMillis = System.currentTimeMillis()),
+            )
+        }
+    }
+
+    suspend fun upsertImportedActivities(activities: List<ImportedActivityEntity>) {
+        val existing = dao.getImportedActivities()
+        val byId = existing.associateBy { it.id }
+        dao.upsertImportedActivities(activities.map { incoming ->
+            val current = byId[incoming.id] ?: existing.firstOrNull {
+                kotlin.math.abs(it.startAtEpochMillis - incoming.startAtEpochMillis) <= 120_000L &&
+                    kotlin.math.abs(it.durationSeconds - incoming.durationSeconds) <= 120L
+            }
+            if (current == null) {
+                incoming
+            } else {
+                val primary = when {
+                    incoming.sourceType == ActivitySourceType.FIT -> incoming
+                    current.sourceType == ActivitySourceType.FIT -> current
+                    else -> incoming
+                }
+                val secondary = if (primary === incoming) current else incoming
+                current.copy(
+                    sourceRecordId = if (incoming.sourceType == ActivitySourceType.FIT) incoming.sourceRecordId else current.sourceRecordId,
+                    sourceType = if (incoming.sourceType == ActivitySourceType.FIT || current.sourceType == ActivitySourceType.FIT) {
+                        ActivitySourceType.FIT
+                    } else current.sourceType,
+                    sourcePackage = if (incoming.sourceType == ActivitySourceType.FIT) incoming.sourcePackage else current.sourcePackage,
+                    title = primary.title.takeIf { it.isNotBlank() } ?: secondary.title,
+                    activityType = primary.activityType.takeIf { it.isNotBlank() } ?: secondary.activityType,
+                    distanceMeters = primary.distanceMeters ?: secondary.distanceMeters,
+                    elevationMeters = primary.elevationMeters ?: secondary.elevationMeters,
+                    caloriesKcal = primary.caloriesKcal ?: secondary.caloriesKcal,
+                    averageHeartRate = primary.averageHeartRate ?: secondary.averageHeartRate,
+                    maxHeartRate = primary.maxHeartRate ?: secondary.maxHeartRate,
+                    averageCadence = primary.averageCadence ?: secondary.averageCadence,
+                    averagePowerWatts = primary.averagePowerWatts ?: secondary.averagePowerWatts,
+                    rawFileName = primary.rawFileName ?: secondary.rawFileName,
+                )
+            }
+        })
+    }
+
+    suspend fun linkActivity(activityId: String, sessionId: String?) {
+        val activity = dao.getImportedActivity(activityId) ?: return
+        require(sessionId == null || dao.getSession(sessionId) != null) { "Тренировка не найдена" }
+        dao.upsertImportedActivity(
+            activity.copy(
+                linkedSessionId = sessionId,
+                status = if (sessionId == null) ActivityLinkStatus.UNLINKED else ActivityLinkStatus.LINKED,
+            ),
+        )
+    }
+
+    suspend fun ignoreActivity(activityId: String) {
+        val activity = dao.getImportedActivity(activityId) ?: return
+        dao.upsertImportedActivity(activity.copy(status = ActivityLinkStatus.IGNORED, linkedSessionId = null))
+    }
+
+    private suspend fun maybeCreateReviewCheckpoint(reason: String = "Завершены три ключевые тренировки", force: Boolean = false) {
+        if (dao.getReviewCheckpoints().any { it.status != ReviewStatus.RESOLVED }) return
+        val completed = dao.getSessions()
+            .filter { it.status == SessionStatus.COMPLETED }
+            .sortedBy { it.completedAtEpochMillis }
+        val resolvedIds = dao.getReviewCheckpoints().filter { it.status == ReviewStatus.RESOLVED }.flatMap {
+            runCatching { json.decodeFromString<List<String>>(it.completedSessionIdsJson) }.getOrDefault(emptyList())
+        }.toSet()
+        val fresh = completed.filter { it.id !in resolvedIds }.takeLast(3)
+        if (!force && fresh.size < 3) return
+        val ids = if (fresh.isNotEmpty()) fresh.map { it.id } else completed.takeLast(3).map { it.id }
+        val now = System.currentTimeMillis()
+        dao.upsertReviewCheckpoint(
+            ReviewCheckpointEntity(
+                id = "review-$now",
+                createdAtEpochMillis = now,
+                completedSessionIdsJson = json.encodeToString(ids),
+                reason = reason,
+            ),
+        )
     }
 
     suspend fun proposeNextBaseBlock(today: LocalDate = LocalDate.now()): ImportPreview {
@@ -390,11 +553,30 @@ class MountainFormRepository(
                         durationMinutes = if (deload) 60 else 75,
                         targetRpe = strengthRpe,
                         steps = listOf(
-                            ExerciseStep("bike", "Велотренажёр", "10 минут легко", "Постепенная разминка"),
-                            ExerciseStep("box-squat", "Присед до высокой опоры", if (deload) "2 × 8, RPE 4" else "3 × 8, RPE 5", "Колено по линии стопы", restSeconds = 75),
-                            ExerciseStep("hinge", "Румынская тяга с лёгким весом", if (deload) "2 × 8, RPE 4" else "3 × 8, RPE 5", "Вес близко к ногам, плечо без боли", restSeconds = 75),
-                            ExerciseStep("calf", "Подъём на носки", if (deload) "2 × 12" else "3 × 12", "Медленное опускание", restSeconds = 45),
-                            ExerciseStep("core", "Антиразгибание лёжа", if (deload) "2 × 6 на сторону" else "3 × 8 на сторону", "Рёбра и таз неподвижны", restSeconds = 45),
+                            ExerciseStep(
+                                "bike", "Велотренажёр", "10 минут легко", "Постепенная разминка",
+                                blockId = "warmup", blockTitle = "Разминка", blockType = WorkoutBlockType.AEROBIC, workSeconds = 600,
+                            ),
+                            ExerciseStep(
+                                "box-squat", "Присед до высокой опоры", if (deload) "2 × 8, RPE 4" else "3 × 8, RPE 5",
+                                "Колено по линии стопы", restSeconds = 75, blockId = "main", blockTitle = "Основная сила",
+                                sets = if (deload) 2 else 3, reps = 8,
+                            ),
+                            ExerciseStep(
+                                "hinge", "Румынская тяга с лёгким весом", if (deload) "2 × 8, RPE 4" else "3 × 8, RPE 5",
+                                "Вес близко к ногам, плечо без боли", restSeconds = 75, blockId = "main", blockTitle = "Основная сила",
+                                sets = if (deload) 2 else 3, reps = 8,
+                            ),
+                            ExerciseStep(
+                                "calf", "Подъём на носки", if (deload) "2 × 12" else "3 × 12", "Медленное опускание",
+                                restSeconds = 15, blockId = "accessory", blockTitle = "Core и аксессуары", blockType = WorkoutBlockType.CIRCUIT,
+                                rounds = if (deload) 2 else 3, reps = 12,
+                            ),
+                            ExerciseStep(
+                                "core", "Антиразгибание лёжа", if (deload) "2 × 6 на сторону" else "3 × 8 на сторону", "Рёбра и таз неподвижны",
+                                blockId = "accessory", blockTitle = "Core и аксессуары", blockType = WorkoutBlockType.CIRCUIT,
+                                rounds = if (deload) 2 else 3, reps = if (deload) 6 else 8, restAfterRoundSeconds = 60,
+                            ),
                         ),
                     ),
                 )
@@ -409,9 +591,20 @@ class MountainFormRepository(
                         durationMinutes = listOf(50, 55, 60, 45)[weekIndex],
                         targetRpe = if (deload) 3 else 4,
                         steps = listOf(
-                            ExerciseStep("walk-warmup", "Разминка ходьбой", "10 минут", "Ровная поверхность"),
-                            ExerciseStep("run-walk", "Лёгкий бег / ходьба", if (deload) "25 минут легко" else "${5 + weekIndex} × (4 мин бег + 1 мин ходьба)", "Разговорный темп; остановиться при боли"),
-                            ExerciseStep("walk-cooldown", "Заминка ходьбой", "5–10 минут", "Отметить ощущения сразу и утром"),
+                            ExerciseStep(
+                                "walk-warmup", "Разминка ходьбой", "10 минут", "Ровная поверхность",
+                                blockId = "warmup", blockTitle = "Разминка", blockType = WorkoutBlockType.AEROBIC, workSeconds = 600,
+                            ),
+                            ExerciseStep(
+                                "run-walk", "Лёгкий бег / ходьба", if (deload) "25 минут легко" else "${5 + weekIndex} × (4 мин бег + 1 мин ходьба)",
+                                "Разговорный темп; остановиться при боли", restSeconds = if (deload) 0 else 60,
+                                blockId = "run", blockTitle = "Беговой блок", blockType = WorkoutBlockType.INTERVAL,
+                                sets = if (deload) 1 else 5 + weekIndex, workSeconds = if (deload) 1500 else 240,
+                            ),
+                            ExerciseStep(
+                                "walk-cooldown", "Заминка ходьбой", "5–10 минут", "Отметить ощущения сразу и утром",
+                                blockId = "cooldown", blockTitle = "Заминка", blockType = WorkoutBlockType.AEROBIC, workSeconds = 600,
+                            ),
                         ),
                     ),
                 )
@@ -430,8 +623,15 @@ class MountainFormRepository(
                         durationMinutes = longMinutes,
                         targetRpe = if (deload) 3 else 4,
                         steps = listOf(
-                            ExerciseStep("walk", "Ходьба или дорожка с уклоном", "$longMinutes минут, RPE ${if (deload) 3 else 4}", "Ровно, без тяжёлого рюкзака и без длинных спусков"),
-                            ExerciseStep("breathing", "Дыхание и контроль рёбер", "3 × 5 циклов", "Длинный спокойный выдох"),
+                            ExerciseStep(
+                                "walk", "Ходьба или дорожка с уклоном", "$longMinutes минут, RPE ${if (deload) 3 else 4}",
+                                "Ровно, без тяжёлого рюкзака и без длинных спусков", blockId = "endurance", blockTitle = "Длительная работа",
+                                blockType = WorkoutBlockType.AEROBIC, workSeconds = longMinutes * 60,
+                            ),
+                            ExerciseStep(
+                                "breathing", "Дыхание и контроль рёбер", "3 × 5 циклов", "Длинный спокойный выдох",
+                                blockId = "cooldown", blockTitle = "Заминка", sets = 3, reps = 5,
+                            ),
                         ),
                     ),
                 )
@@ -526,5 +726,8 @@ class MountainFormRepository(
 
     companion object {
         val SHOULDER_RESTRICTION_TAGS = setOf("SHOULDER_ABDUCTION", "OVERHEAD", "HANGING", "DIPS")
+        val SHOULDER_RISK_WORDS = setOf(
+            "над головой", "подтяг", "брусь", "отведен", "разведен", "жим вверх", "overhead", "pull-up", "dips",
+        )
     }
 }

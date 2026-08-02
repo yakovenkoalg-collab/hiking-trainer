@@ -23,7 +23,7 @@ import java.time.Duration
 import java.time.ZonedDateTime
 import java.util.concurrent.TimeUnit
 
-class ReminderScheduler(private val context: Context) {
+class ReminderScheduler(val context: Context) {
     fun update(settings: AppSettingsEntity) {
         val workManager = WorkManager.getInstance(context)
         if (!settings.remindersEnabled) {

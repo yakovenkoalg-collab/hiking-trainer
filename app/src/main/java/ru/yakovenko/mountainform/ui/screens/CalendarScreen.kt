@@ -71,6 +71,9 @@ fun CalendarScreen(
     val futurePlanned = state.sessions.count {
         it.status == SessionStatus.PLANNED && it.plannedEpochDay >= LocalDate.now().toEpochDay()
     }
+    val lastPlannedDay = state.sessions.filter { it.status == SessionStatus.PLANNED }
+        .maxOfOrNull { it.plannedEpochDay } ?: LocalDate.now().toEpochDay()
+    val bufferDays = lastPlannedDay - LocalDate.now().toEpochDay()
 
     LazyColumn(
         modifier = Modifier.fillMaxSize().padding(padding),
@@ -126,13 +129,14 @@ fun CalendarScreen(
                 )
             }
         }
-        if (futurePlanned <= 3) {
+        if (bufferDays <= 14) {
             item {
                 Card {
                     Column(Modifier.fillMaxWidth().padding(18.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                        Text("План заканчивается", fontWeight = FontWeight.Bold)
+                        Text("Резерв плана: $futurePlanned тренировок / ${bufferDays.coerceAtLeast(0)} дней", fontWeight = FontWeight.Bold)
                         Text(
-                            "Можно сформировать следующий 4-недельный блок. Он появится в предпросмотре и не изменит календарь без вашего подтверждения.",
+                            "После контрольного отчёта предпочтителен персонально скорректированный JSON из нашего чата. " +
+                                "Если он ещё не готов, можно подготовить безопасный базовый блок; календарь изменится только после подтверждения.",
                         )
                         Button(onClick = onProposeNextBlock, modifier = Modifier.fillMaxWidth()) {
                             Text("Подготовить следующий блок")

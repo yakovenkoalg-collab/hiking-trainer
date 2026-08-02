@@ -132,6 +132,9 @@ data class AppSettingsEntity(
     val reminderHour: Int = 19,
     val reminderMinute: Int = 0,
     val healthWindowDays: Int = 30,
+    @ColumnInfo(defaultValue = "0") val yandexSyncEnabled: Boolean = false,
+    @ColumnInfo(defaultValue = "'disk:/Горная форма'") val yandexRootPath: String = "disk:/Горная форма",
+    @ColumnInfo(defaultValue = "''") val yandexAccountLabel: String = "",
 )
 
 @Serializable
@@ -168,6 +171,66 @@ data class PostureAssessmentEntity(
 )
 
 @Serializable
+@Entity(
+    tableName = "session_set_logs",
+    primaryKeys = ["sessionId", "stepId", "roundIndex", "setIndex"],
+)
+data class SessionSetLogEntity(
+    val sessionId: String,
+    val stepId: String,
+    val roundIndex: Int,
+    val setIndex: Int,
+    val plannedReps: Int? = null,
+    val actualReps: Int? = null,
+    val loadKg: Double? = null,
+    val actualRpe: Int? = null,
+    val rir: Int? = null,
+    val pain: Boolean = false,
+    val painNote: String = "",
+    val startedAtEpochMillis: Long? = null,
+    val completedAtEpochMillis: Long? = null,
+    val elapsedSeconds: Int = 0,
+    val completed: Boolean = false,
+)
+
+@Serializable
+@Entity(tableName = "review_checkpoints")
+data class ReviewCheckpointEntity(
+    @PrimaryKey val id: String,
+    val createdAtEpochMillis: Long,
+    val completedSessionIdsJson: String,
+    val reason: String,
+    val status: String = ReviewStatus.PENDING,
+    val exportedAtEpochMillis: Long? = null,
+    val resolvedAtEpochMillis: Long? = null,
+)
+
+@Serializable
+@Entity(tableName = "imported_activities")
+data class ImportedActivityEntity(
+    @PrimaryKey val id: String,
+    val sourceRecordId: String,
+    val sourceType: String,
+    val sourcePackage: String,
+    val title: String,
+    val activityType: String,
+    val startAtEpochMillis: Long,
+    val endAtEpochMillis: Long,
+    val durationSeconds: Long,
+    val distanceMeters: Double? = null,
+    val elevationMeters: Double? = null,
+    val caloriesKcal: Double? = null,
+    val averageHeartRate: Double? = null,
+    val maxHeartRate: Double? = null,
+    val averageCadence: Double? = null,
+    val averagePowerWatts: Double? = null,
+    val linkedSessionId: String? = null,
+    val status: String = ActivityLinkStatus.UNLINKED,
+    val importedAtEpochMillis: Long,
+    val rawFileName: String? = null,
+)
+
+@Serializable
 data class ExerciseStep(
     val id: String,
     val title: String,
@@ -178,6 +241,14 @@ data class ExerciseStep(
     val restrictionTags: List<String> = emptyList(),
     val exerciseId: String = "",
     val illustrationKey: String = "",
+    val blockId: String = "main",
+    val blockTitle: String = "Основной блок",
+    val blockType: String = WorkoutBlockType.STRAIGHT,
+    val sets: Int = 1,
+    val rounds: Int = 1,
+    val reps: Int? = null,
+    val workSeconds: Int? = null,
+    val restAfterRoundSeconds: Int = 0,
 )
 
 @Serializable
@@ -205,7 +276,7 @@ data class PlanSession(
 
 @Serializable
 data class ReportEnvelope(
-    val schemaVersion: Int = 1,
+    val schemaVersion: Int = 2,
     val generatedAtEpochMillis: Long,
     val periodStartEpochDay: Long,
     val periodEndEpochDay: Long,
@@ -214,6 +285,9 @@ data class ReportEnvelope(
     val sessions: List<ReportSession>,
     val readiness: List<ReportReadiness>,
     val bodyMetrics: List<ReportBodyMetric>,
+    val setLogs: List<ReportSetLog> = emptyList(),
+    val activities: List<ReportActivity> = emptyList(),
+    val checkpoint: ReportCheckpoint? = null,
 )
 
 @Serializable
@@ -263,6 +337,69 @@ data class ReportBodyMetric(
     val weightKg: Double?,
     val waistCm: Double?,
 )
+
+@Serializable
+data class ReportSetLog(
+    val sessionId: String,
+    val stepId: String,
+    val roundIndex: Int,
+    val setIndex: Int,
+    val plannedReps: Int?,
+    val actualReps: Int?,
+    val loadKg: Double?,
+    val actualRpe: Int?,
+    val rir: Int?,
+    val pain: Boolean,
+    val painNote: String,
+    val elapsedSeconds: Int,
+)
+
+@Serializable
+data class ReportActivity(
+    val id: String,
+    val sourceType: String,
+    val title: String,
+    val activityType: String,
+    val startAtEpochMillis: Long,
+    val durationSeconds: Long,
+    val distanceMeters: Double?,
+    val elevationMeters: Double?,
+    val averageHeartRate: Double?,
+    val maxHeartRate: Double?,
+    val linkedSessionId: String?,
+)
+
+@Serializable
+data class ReportCheckpoint(
+    val id: String,
+    val reason: String,
+    val completedSessionIds: List<String>,
+)
+
+object WorkoutBlockType {
+    const val STRAIGHT = "STRAIGHT"
+    const val SUPERSET = "SUPERSET"
+    const val CIRCUIT = "CIRCUIT"
+    const val INTERVAL = "INTERVAL"
+    const val AEROBIC = "AEROBIC"
+}
+
+object ReviewStatus {
+    const val PENDING = "PENDING"
+    const val EXPORTED = "EXPORTED"
+    const val RESOLVED = "RESOLVED"
+}
+
+object ActivitySourceType {
+    const val HEALTH_CONNECT = "HEALTH_CONNECT"
+    const val FIT = "FIT"
+}
+
+object ActivityLinkStatus {
+    const val UNLINKED = "UNLINKED"
+    const val LINKED = "LINKED"
+    const val IGNORED = "IGNORED"
+}
 
 object SessionStatus {
     const val PLANNED = "PLANNED"

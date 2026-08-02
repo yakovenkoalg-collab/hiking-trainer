@@ -14,6 +14,7 @@ import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Backup
 import androidx.compose.material.icons.filled.CloudSync
 import androidx.compose.material.icons.filled.FolderOpen
+import androidx.compose.material.icons.filled.Share
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -24,12 +25,19 @@ import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
+import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.unit.dp
 import ru.yakovenko.mountainform.data.AppSettingsEntity
 import java.time.Instant
@@ -46,9 +54,17 @@ fun DataSyncScreen(
     onSync: () -> Unit,
     onCreateBackup: () -> Unit,
     onRestoreBackup: (Uri) -> Unit,
+    yandexConnected: Boolean,
+    onConnectYandex: (String, String) -> Unit,
+    onDisconnectYandex: () -> Unit,
+    onSyncYandex: () -> Unit,
+    onCreateYandexBackup: () -> Unit,
+    onShareReport: () -> Unit,
 ) {
     val context = LocalContext.current
     val current = settings ?: AppSettingsEntity()
+    var yandexToken by remember { mutableStateOf("") }
+    var yandexRoot by remember(current.yandexRootPath) { mutableStateOf(current.yandexRootPath) }
     val folderPicker = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocumentTree()) { uri ->
         if (uri != null) {
             runCatching {
@@ -67,7 +83,7 @@ fun DataSyncScreen(
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text("Общая папка") },
+                title = { Text("Обмен данными") },
                 navigationIcon = {
                     IconButton(onClick = onBack) {
                         Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Назад")
@@ -99,6 +115,55 @@ fun DataSyncScreen(
             }
 
             Card {
+                Column(Modifier.fillMaxWidth().padding(18.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                    Text("Яндекс Диск", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+                    if (yandexConnected) {
+                        Text("Подключено · ${current.yandexAccountLabel.ifBlank { "OAuth" }}", color = MaterialTheme.colorScheme.primary)
+                        Text(current.yandexRootPath, style = MaterialTheme.typography.bodySmall)
+                        Button(onClick = onSyncYandex, modifier = Modifier.fillMaxWidth()) {
+                            Icon(Icons.Default.CloudSync, contentDescription = null)
+                            Text("  Синхронизировать")
+                        }
+                        OutlinedButton(onClick = onCreateYandexBackup, modifier = Modifier.fillMaxWidth()) {
+                            Icon(Icons.Default.Backup, contentDescription = null)
+                            Text("  Копия на Яндекс Диске")
+                        }
+                        TextButton(onClick = onDisconnectYandex, modifier = Modifier.fillMaxWidth()) { Text("Отключить") }
+                    } else {
+                        Text(
+                            "Токен хранится только в зашифрованном хранилище Android и не попадает в отчёты или копии.",
+                            style = MaterialTheme.typography.bodySmall,
+                        )
+                        OutlinedTextField(
+                            value = yandexToken,
+                            onValueChange = { yandexToken = it },
+                            label = { Text("OAuth-токен Яндекс Диска") },
+                            visualTransformation = PasswordVisualTransformation(),
+                            singleLine = true,
+                            modifier = Modifier.fillMaxWidth(),
+                        )
+                        OutlinedTextField(
+                            value = yandexRoot,
+                            onValueChange = { yandexRoot = it },
+                            label = { Text("Папка") },
+                            singleLine = true,
+                            modifier = Modifier.fillMaxWidth(),
+                        )
+                        Button(
+                            onClick = { onConnectYandex(yandexToken, yandexRoot) },
+                            enabled = yandexToken.isNotBlank(),
+                            modifier = Modifier.fillMaxWidth(),
+                        ) { Text("Подключить") }
+                        Text(
+                            "Для первого подключения нужен OAuth-токен приложения с доступом к Диску. Client ID и секреты в APK не встраиваются.",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
+                }
+            }
+
+            Card {
                 Column(Modifier.fillMaxWidth().padding(18.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
                     androidx.compose.foundation.layout.Row(
                         Modifier.fillMaxWidth(),
@@ -111,7 +176,7 @@ fun DataSyncScreen(
                         }
                         Switch(
                             checked = current.automaticSync,
-                            enabled = current.sharedFolderUri != null,
+                            enabled = current.sharedFolderUri != null || yandexConnected,
                             onCheckedChange = { onUpdateSettings(current.copy(automaticSync = it)) },
                         )
                     }
@@ -124,6 +189,11 @@ fun DataSyncScreen(
                         Text("  Синхронизировать")
                     }
                 }
+            }
+
+            OutlinedButton(onClick = onShareReport, modifier = Modifier.fillMaxWidth()) {
+                Icon(Icons.Default.Share, contentDescription = null)
+                Text("  Поделиться отчётом для корректировки плана")
             }
 
             Card {
@@ -145,8 +215,8 @@ fun DataSyncScreen(
             }
 
             Text(
-                "Папка доступна без USB: в системном выборе можно указать Google Drive или другой облачный провайдер. " +
-                    "Отчёты содержат данные о самочувствии; фото осанки не выгружаются.",
+                "Системная папка остаётся запасным вариантом. Для обмена без USB используйте Яндекс Диск. " +
+                    "Отчёты содержат данные о самочувствии; фото осанки и облачный токен не выгружаются.",
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )

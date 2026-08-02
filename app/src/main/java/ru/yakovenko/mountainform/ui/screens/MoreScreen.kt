@@ -73,8 +73,12 @@ fun MoreScreen(
         item {
             SettingsEntry(
                 Icons.Default.CloudSync,
-                "Общая папка и резервные копии",
-                state.settings?.sharedFolderName ?: "Папка не выбрана",
+                "Обмен планом и резервные копии",
+                when {
+                    state.settings?.yandexSyncEnabled == true -> "Подключён Яндекс Диск"
+                    state.settings?.sharedFolderName != null -> state.settings.sharedFolderName
+                    else -> "Обмен не настроен"
+                },
                 onOpenSync,
             )
         }

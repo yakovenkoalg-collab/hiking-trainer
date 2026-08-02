@@ -39,6 +39,7 @@ fun ProgressScreen(
     state: AppUiState,
     healthSummary: HealthSummary,
     onSaveBodyMetric: (Double?, Double?, Boolean, Boolean, Boolean, Boolean, String) -> Unit,
+    onOpenActivities: () -> Unit,
 ) {
     var showBodyMetric by remember { mutableStateOf(false) }
     val today = LocalDate.now().toEpochDay()
@@ -79,6 +80,18 @@ fun ProgressScreen(
             }
         }
         item { SectionTitle("Garmin за ${healthSummary.windowDays} дней") }
+        item {
+            val unlinked = state.importedActivities.count { it.status == ru.yakovenko.mountainform.data.ActivityLinkStatus.UNLINKED }
+            Card(onClick = onOpenActivities) {
+                Column(Modifier.fillMaxWidth().padding(18.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                    Text("Фактические тренировки", fontWeight = FontWeight.Bold)
+                    Text(
+                        if (unlinked > 0) "$unlinked активностей ожидают связи с планом" else "Открыть активности Garmin и связи с планом",
+                        color = if (unlinked > 0) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+            }
+        }
         item {
             Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                 MetricCard("тренировок", healthSummary.workouts.toString(), Modifier.weight(1f))

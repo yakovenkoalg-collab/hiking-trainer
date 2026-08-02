@@ -158,6 +158,48 @@ interface MountainFormDao {
     @Upsert
     suspend fun upsertPostureAssessments(assessments: List<PostureAssessmentEntity>)
 
+    @Query("SELECT * FROM session_set_logs ORDER BY completedAtEpochMillis DESC")
+    fun observeSetLogs(): Flow<List<SessionSetLogEntity>>
+
+    @Query("SELECT * FROM session_set_logs WHERE sessionId = :sessionId ORDER BY roundIndex, setIndex")
+    fun observeSetLogs(sessionId: String): Flow<List<SessionSetLogEntity>>
+
+    @Query("SELECT * FROM session_set_logs")
+    suspend fun getSetLogs(): List<SessionSetLogEntity>
+
+    @Upsert
+    suspend fun upsertSetLog(log: SessionSetLogEntity)
+
+    @Upsert
+    suspend fun upsertSetLogs(logs: List<SessionSetLogEntity>)
+
+    @Query("SELECT * FROM review_checkpoints ORDER BY createdAtEpochMillis DESC")
+    fun observeReviewCheckpoints(): Flow<List<ReviewCheckpointEntity>>
+
+    @Query("SELECT * FROM review_checkpoints ORDER BY createdAtEpochMillis DESC")
+    suspend fun getReviewCheckpoints(): List<ReviewCheckpointEntity>
+
+    @Upsert
+    suspend fun upsertReviewCheckpoint(checkpoint: ReviewCheckpointEntity)
+
+    @Upsert
+    suspend fun upsertReviewCheckpoints(checkpoints: List<ReviewCheckpointEntity>)
+
+    @Query("SELECT * FROM imported_activities ORDER BY startAtEpochMillis DESC")
+    fun observeImportedActivities(): Flow<List<ImportedActivityEntity>>
+
+    @Query("SELECT * FROM imported_activities ORDER BY startAtEpochMillis DESC")
+    suspend fun getImportedActivities(): List<ImportedActivityEntity>
+
+    @Query("SELECT * FROM imported_activities WHERE id = :id")
+    suspend fun getImportedActivity(id: String): ImportedActivityEntity?
+
+    @Upsert
+    suspend fun upsertImportedActivity(activity: ImportedActivityEntity)
+
+    @Upsert
+    suspend fun upsertImportedActivities(activities: List<ImportedActivityEntity>)
+
     @Transaction
     suspend fun mergeBackup(
         profile: UserProfileEntity,
@@ -170,6 +212,9 @@ interface MountainFormDao {
         rescheduleEvents: List<RescheduleEventEntity>,
         stepLogs: List<SessionStepLogEntity>,
         postureAssessments: List<PostureAssessmentEntity>,
+        setLogs: List<SessionSetLogEntity>,
+        reviewCheckpoints: List<ReviewCheckpointEntity>,
+        importedActivities: List<ImportedActivityEntity>,
         settings: AppSettingsEntity,
     ) {
         upsertProfile(profile)
@@ -182,6 +227,9 @@ interface MountainFormDao {
         upsertRescheduleEvents(rescheduleEvents)
         upsertStepLogs(stepLogs)
         upsertPostureAssessments(postureAssessments)
+        upsertSetLogs(setLogs)
+        upsertReviewCheckpoints(reviewCheckpoints)
+        upsertImportedActivities(importedActivities)
         upsertSettings(settings)
     }
 
@@ -203,8 +251,11 @@ interface MountainFormDao {
         RescheduleEventEntity::class,
         SessionStepLogEntity::class,
         PostureAssessmentEntity::class,
+        SessionSetLogEntity::class,
+        ReviewCheckpointEntity::class,
+        ImportedActivityEntity::class,
     ],
-    version = 2,
+    version = 3,
     exportSchema = true,
 )
 abstract class MountainFormDatabase : RoomDatabase() {
@@ -289,11 +340,80 @@ abstract class MountainFormDatabase : RoomDatabase() {
             }
         }
 
+        val MIGRATION_2_3 = object : Migration(2, 3) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE app_settings ADD COLUMN yandexSyncEnabled INTEGER NOT NULL DEFAULT 0")
+                db.execSQL("ALTER TABLE app_settings ADD COLUMN yandexRootPath TEXT NOT NULL DEFAULT 'disk:/Горная форма'")
+                db.execSQL("ALTER TABLE app_settings ADD COLUMN yandexAccountLabel TEXT NOT NULL DEFAULT ''")
+                db.execSQL(
+                    """
+                    CREATE TABLE IF NOT EXISTS session_set_logs (
+                        sessionId TEXT NOT NULL,
+                        stepId TEXT NOT NULL,
+                        roundIndex INTEGER NOT NULL,
+                        setIndex INTEGER NOT NULL,
+                        plannedReps INTEGER,
+                        actualReps INTEGER,
+                        loadKg REAL,
+                        actualRpe INTEGER,
+                        rir INTEGER,
+                        pain INTEGER NOT NULL,
+                        painNote TEXT NOT NULL,
+                        startedAtEpochMillis INTEGER,
+                        completedAtEpochMillis INTEGER,
+                        elapsedSeconds INTEGER NOT NULL,
+                        completed INTEGER NOT NULL,
+                        PRIMARY KEY(sessionId, stepId, roundIndex, setIndex)
+                    )
+                    """.trimIndent(),
+                )
+                db.execSQL(
+                    """
+                    CREATE TABLE IF NOT EXISTS review_checkpoints (
+                        id TEXT NOT NULL PRIMARY KEY,
+                        createdAtEpochMillis INTEGER NOT NULL,
+                        completedSessionIdsJson TEXT NOT NULL,
+                        reason TEXT NOT NULL,
+                        status TEXT NOT NULL,
+                        exportedAtEpochMillis INTEGER,
+                        resolvedAtEpochMillis INTEGER
+                    )
+                    """.trimIndent(),
+                )
+                db.execSQL(
+                    """
+                    CREATE TABLE IF NOT EXISTS imported_activities (
+                        id TEXT NOT NULL PRIMARY KEY,
+                        sourceRecordId TEXT NOT NULL,
+                        sourceType TEXT NOT NULL,
+                        sourcePackage TEXT NOT NULL,
+                        title TEXT NOT NULL,
+                        activityType TEXT NOT NULL,
+                        startAtEpochMillis INTEGER NOT NULL,
+                        endAtEpochMillis INTEGER NOT NULL,
+                        durationSeconds INTEGER NOT NULL,
+                        distanceMeters REAL,
+                        elevationMeters REAL,
+                        caloriesKcal REAL,
+                        averageHeartRate REAL,
+                        maxHeartRate REAL,
+                        averageCadence REAL,
+                        averagePowerWatts REAL,
+                        linkedSessionId TEXT,
+                        status TEXT NOT NULL,
+                        importedAtEpochMillis INTEGER NOT NULL,
+                        rawFileName TEXT
+                    )
+                    """.trimIndent(),
+                )
+            }
+        }
+
         fun create(context: Context): MountainFormDatabase =
             Room.databaseBuilder(
                 context.applicationContext,
                 MountainFormDatabase::class.java,
                 "mountain-form.db",
-            ).addMigrations(MIGRATION_1_2).build()
+            ).addMigrations(MIGRATION_1_2, MIGRATION_2_3).build()
     }
 }

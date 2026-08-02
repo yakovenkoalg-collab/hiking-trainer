@@ -13,6 +13,7 @@ work = "2.11.2"
 healthConnect = "1.1.0"
 documentFile = "1.1.0"
 serialization = "1.10.0"
+garminFit = "21.205.0"
 coroutines = "1.10.2"
 junit = "4.13.2"
 androidxJunit = "1.3.0"
@@ -42,6 +43,7 @@ androidx-health-connect = { module = "androidx.health.connect:connect-client", v
 androidx-documentfile = { module = "androidx.documentfile:documentfile", version.ref = "documentFile" }
 
 kotlinx-serialization-json = { module = "org.jetbrains.kotlinx:kotlinx-serialization-json", version.ref = "serialization" }
+garmin-fit = { module = "com.garmin:fit", version.ref = "garminFit" }
 kotlinx-coroutines-test = { module = "org.jetbrains.kotlinx:kotlinx-coroutines-test", version.ref = "coroutines" }
 
 junit = { module = "junit:junit", version.ref = "junit" }

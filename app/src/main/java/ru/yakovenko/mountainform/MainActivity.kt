@@ -8,6 +8,7 @@ import androidx.activity.compose.setContent
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.lifecycle.ViewModelProvider
 import ru.yakovenko.mountainform.health.HealthConnectManager
+import ru.yakovenko.mountainform.health.FitActivityImporter
 import ru.yakovenko.mountainform.reminders.ReminderScheduler
 import ru.yakovenko.mountainform.sync.SharedFolderSyncManager
 import ru.yakovenko.mountainform.ui.AppViewModel
@@ -30,6 +31,9 @@ class MainActivity : ComponentActivity() {
                 AppUpdateManager(applicationContext),
                 reminderScheduler,
                 sharedFolderSyncManager,
+                application.yandexDiskSyncManager,
+                application.secureTokenStore,
+                FitActivityImporter(applicationContext),
             ),
         )[AppViewModel::class.java]
         val permissionLauncher = registerForActivityResult(healthConnectManager.permissionContract) {
