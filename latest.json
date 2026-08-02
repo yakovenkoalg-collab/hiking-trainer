@@ -1,7 +1,7 @@
 {
-  "versionCode": 2,
-  "versionName": "0.2.0",
-  "apkUrl": "https://github.com/yakovenkoalg-collab/hiking-trainer/releases/download/v0.2.0/mountain-form-0.2.0.apk",
-  "sha256": "9ea0fe1d511857c517a5c1bc0101bb410a7f8dcca854604310cbd6af5d018dc7",
-  "notes": "Календарь, пошаговые тренировки с иллюстрациями, общая папка, резервные копии, осанка, напоминания и диагностика Garmin/Health Connect."
+  "versionCode": 8,
+  "versionName": "0.3.5",
+  "apkUrl": "https://github.com/yakovenkoalg-collab/hiking-trainer/releases/download/v0.3.5/mountain-form-0.3.5.apk",
+  "sha256": "eea035ba29381390aa1a230502c83079c3485a3817fced6bbe4e6b916b2c12c2",
+  "notes": "Яндекс ID и автообмен, Garmin/Health Connect/FIT, обзор тренировки, быстрые подходы, круговая ротация, сигналы таймера, учёт отдыха и безопасная миграция истории."
 }
