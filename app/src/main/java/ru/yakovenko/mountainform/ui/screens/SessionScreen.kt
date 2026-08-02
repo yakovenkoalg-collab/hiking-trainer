@@ -14,6 +14,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.automirrored.filled.List
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.FitnessCenter
 import androidx.compose.material.icons.filled.Pause
@@ -39,15 +40,15 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
-import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import kotlinx.coroutines.delay
@@ -58,13 +59,16 @@ import ru.yakovenko.mountainform.data.ExerciseStep
 import ru.yakovenko.mountainform.data.SessionStatus
 import ru.yakovenko.mountainform.data.SessionSetLogEntity
 import ru.yakovenko.mountainform.data.SessionStepLogEntity
+import ru.yakovenko.mountainform.data.SetTimingStatus
 import ru.yakovenko.mountainform.data.TrainingSessionEntity
 import ru.yakovenko.mountainform.data.catalogId
 import ru.yakovenko.mountainform.data.imageKey
 import ru.yakovenko.mountainform.ui.components.SafetyBanner
 import ru.yakovenko.mountainform.ui.formatEpochDay
 import ru.yakovenko.mountainform.domain.WorkoutPlanCompiler
+import ru.yakovenko.mountainform.domain.WorkoutExecutionState
 import ru.yakovenko.mountainform.domain.WorkoutSetTarget
+import ru.yakovenko.mountainform.domain.WorkoutTimerMode
 
 @Composable
 @OptIn(ExperimentalMaterial3Api::class)
@@ -79,10 +83,15 @@ fun SessionScreen(
     loadBlocked: Boolean,
     adaptationRequired: Boolean,
     readinessRecommendation: String,
+    readinessReasons: List<String>,
+    initialExecutionState: WorkoutExecutionState?,
+    onExecutionStateChanged: (WorkoutExecutionState) -> Unit,
     onStepCompleted: (String, String, Boolean) -> Unit,
     onSaveSetLog: (SessionSetLogEntity) -> Unit,
     onBack: () -> Unit,
-    onComplete: (String, Int, String) -> Unit,
+    onEditReadiness: () -> Unit,
+    onTimerFinished: (WorkoutTimerMode) -> Unit = {},
+    onComplete: (String, Int, String, Int) -> Unit,
     onSkip: (String, String) -> Unit,
 ) {
     if (session == null) {
@@ -98,17 +107,38 @@ fun SessionScreen(
     fun key(target: WorkoutSetTarget) = listOf(target.step.id, target.roundIndex, target.setIndex)
     val completedTargetKeys = sessionSetLogs.mapTo(mutableSetOf()) { listOf(it.stepId, it.roundIndex, it.setIndex) }
     val initialTarget = targets.indexOfFirst { key(it) !in completedTargetKeys }.takeIf { it >= 0 } ?: 0
-    var targetIndex by rememberSaveable(session.id) { mutableIntStateOf(initialTarget) }
+    val restoredTarget = initialExecutionState?.targetIndex?.coerceIn(0, targets.lastIndex.coerceAtLeast(0)) ?: initialTarget
+    var executionState by remember(session.id) {
+        mutableStateOf(
+            initialExecutionState?.copy(targetIndex = restoredTarget)
+                ?: WorkoutExecutionState(
+                    sessionId = session.id,
+                    targetIndex = restoredTarget,
+                    workRemainingSeconds = targets.getOrNull(restoredTarget)?.workSeconds ?: 0,
+                ),
+        )
+    }
+    var clockEpochMillis by remember { mutableLongStateOf(System.currentTimeMillis()) }
     var showCompletion by remember { mutableStateOf(false) }
     var showSkip by remember { mutableStateOf(false) }
+    var showSkipStage by remember { mutableStateOf(false) }
     var showPainStop by remember { mutableStateOf(false) }
     var showSetResult by remember { mutableStateOf(false) }
-    var restSeconds by rememberSaveable(session.id) { mutableIntStateOf(0) }
-    var workoutSeconds by rememberSaveable(session.id) { mutableIntStateOf(0) }
-    var setSeconds by rememberSaveable(session.id) { mutableIntStateOf(0) }
-    var workRemaining by rememberSaveable(session.id) { mutableIntStateOf(0) }
-    var setRunning by rememberSaveable(session.id) { mutableStateOf(false) }
-    var paused by rememberSaveable(session.id) { mutableStateOf(false) }
+    var editResultOnly by remember { mutableStateOf(false) }
+    var showResetTimerConfirm by remember { mutableStateOf(false) }
+    var showOverview by remember(session.id) {
+        mutableStateOf(session.status == SessionStatus.PLANNED && initialExecutionState?.workoutStarted != true)
+    }
+    var pendingRestLog by remember(session.id) { mutableStateOf<SessionSetLogEntity?>(null) }
+    val targetIndex = executionState.targetIndex
+    val workoutSeconds = executionState.workoutElapsedAt(clockEpochMillis)
+    val setSeconds = executionState.setElapsedAt(clockEpochMillis)
+    val workRemaining = executionState.workRemainingAt(clockEpochMillis)
+    val restSeconds = executionState.restRemainingAt(clockEpochMillis)
+    val restElapsedSeconds = executionState.restElapsedAt(clockEpochMillis)
+    val restOvertimeSeconds = executionState.restOvertimeAt(clockEpochMillis)
+    val setRunning = executionState.timerMode == WorkoutTimerMode.SET && !executionState.paused
+    val paused = executionState.paused
     val target = targets.getOrNull(targetIndex)
     val step = target?.step
     val details = step?.let { current -> catalog.firstOrNull { it.id == current.catalogId() } }
@@ -119,29 +149,202 @@ fun SessionScreen(
         }
     }
 
-    LaunchedEffect(targetIndex) {
-        setSeconds = 0
-        workRemaining = target?.workSeconds ?: 0
-        setRunning = false
+    fun persistExecution(next: WorkoutExecutionState) {
+        executionState = next
+        clockEpochMillis = System.currentTimeMillis()
+        onExecutionStateChanged(next)
     }
-    LaunchedEffect(session.id, paused, setRunning, restSeconds, targetIndex) {
-        while (session.status == SessionStatus.PLANNED) {
-            delay(1_000)
-            if (!paused) {
-                workoutSeconds += 1
-                if (restSeconds > 0) {
-                    restSeconds -= 1
-                } else if (setRunning) {
-                    setSeconds += 1
-                    if (workRemaining > 0) workRemaining -= 1
-                }
+
+    fun selectTarget(index: Int, restAfterSeconds: Int = 0, restSourceTargetIndex: Int? = null) {
+        val now = System.currentTimeMillis()
+        val nextIndex = index.coerceIn(0, targets.lastIndex.coerceAtLeast(0))
+        val nextTimer = if (restAfterSeconds > 0) WorkoutTimerMode.REST else WorkoutTimerMode.NONE
+        persistExecution(
+            executionState.snapshotAt(now).copy(
+                targetIndex = nextIndex,
+                timerMode = nextTimer,
+                timerTickStartedAtEpochMillis = if (nextTimer == WorkoutTimerMode.REST && !paused) now else null,
+                setElapsedSeconds = 0,
+                workRemainingSeconds = targets.getOrNull(nextIndex)?.workSeconds ?: 0,
+                restRemainingSeconds = restAfterSeconds,
+                restElapsedSeconds = 0,
+                restPlannedSeconds = restAfterSeconds,
+                restSourceTargetIndex = restSourceTargetIndex,
+                restAlerted = false,
+            ),
+        )
+    }
+
+    fun finishRest(skipped: Boolean) {
+        val now = System.currentTimeMillis()
+        val snapshot = executionState.snapshotAt(now)
+        val source = targets.getOrNull(snapshot.restSourceTargetIndex ?: -1)
+        val stored = source?.let { sourceTarget ->
+            sessionSetLogs.firstOrNull {
+                it.stepId == sourceTarget.step.id &&
+                    it.roundIndex == sourceTarget.roundIndex &&
+                    it.setIndex == sourceTarget.setIndex
             }
         }
+        (pendingRestLog ?: stored)?.let { log ->
+            onSaveSetLog(
+                log.copy(
+                    actualRestSeconds = snapshot.restElapsedSeconds,
+                    restSkipped = skipped,
+                ),
+            )
+        }
+        pendingRestLog = null
+        persistExecution(
+            snapshot.copy(
+                timerMode = WorkoutTimerMode.NONE,
+                timerTickStartedAtEpochMillis = null,
+                restRemainingSeconds = 0,
+                restElapsedSeconds = 0,
+                restPlannedSeconds = 0,
+                restSourceTargetIndex = null,
+                restAlerted = false,
+            ),
+        )
     }
-    LaunchedEffect(workRemaining) {
-        if (target?.workSeconds != null && workRemaining == 0 && setRunning) {
-            setRunning = false
-            showSetResult = true
+
+    fun saveTargetResult(
+        resultTarget: WorkoutSetTarget,
+        reps: Int?,
+        load: Double?,
+        rpe: Int?,
+        rir: Int?,
+        pain: Boolean,
+        painNote: String,
+        advance: Boolean,
+    ) {
+        val now = System.currentTimeMillis()
+        val snapshot = executionState.snapshotAt(now)
+        val existing = sessionSetLogs.firstOrNull {
+            it.stepId == resultTarget.step.id &&
+                it.roundIndex == resultTarget.roundIndex &&
+                it.setIndex == resultTarget.setIndex
+        }
+        val loggedElapsed = if (advance) snapshot.setElapsedSeconds else existing?.elapsedSeconds ?: snapshot.setElapsedSeconds
+        val timingStatus = if (loggedElapsed > 0) SetTimingStatus.RECORDED else SetTimingStatus.NOT_USED
+        val log = SessionSetLogEntity(
+            sessionId = session.id,
+            stepId = resultTarget.step.id,
+            roundIndex = resultTarget.roundIndex,
+            setIndex = resultTarget.setIndex,
+            plannedReps = resultTarget.plannedReps,
+            actualReps = reps,
+            loadKg = load,
+            actualRpe = rpe,
+            rir = rir,
+            pain = pain,
+            painNote = painNote,
+            startedAtEpochMillis = now - loggedElapsed * 1_000L,
+            completedAtEpochMillis = now,
+            elapsedSeconds = loggedElapsed,
+            timingStatus = timingStatus,
+            plannedRestSeconds = resultTarget.restAfterSeconds,
+            actualRestSeconds = existing?.actualRestSeconds,
+            restSkipped = existing?.restSkipped ?: false,
+            completed = true,
+        )
+        onSaveSetLog(log)
+        val otherTargetsForStepDone = targets
+            .filter { it.step.id == resultTarget.step.id && key(it) != key(resultTarget) }
+            .all { key(it) in completedTargetKeys }
+        if (otherTargetsForStepDone) onStepCompleted(session.id, resultTarget.step.id, true)
+        if (!advance) return
+        if (pain) {
+            if (snapshot.workoutStarted && !snapshot.paused) {
+                persistExecution(
+                    snapshot.copy(
+                        paused = true,
+                        workoutTickStartedAtEpochMillis = null,
+                        timerTickStartedAtEpochMillis = null,
+                    ),
+                )
+            }
+            showPainStop = true
+            return
+        }
+        if (targetIndex < targets.lastIndex) {
+            if (resultTarget.restAfterSeconds > 0) pendingRestLog = log
+            selectTarget(
+                index = targetIndex + 1,
+                restAfterSeconds = resultTarget.restAfterSeconds,
+                restSourceTargetIndex = targetIndex.takeIf { resultTarget.restAfterSeconds > 0 },
+            )
+        } else {
+            persistExecution(
+                snapshot.copy(
+                    timerMode = WorkoutTimerMode.NONE,
+                    timerTickStartedAtEpochMillis = null,
+                    setElapsedSeconds = 0,
+                    workRemainingSeconds = 0,
+                ),
+            )
+            showCompletion = true
+        }
+    }
+
+    fun quickCompleteCurrentTarget() {
+        val current = target ?: return
+        val previousForExercise = sessionSetLogs
+            .filter { it.stepId == current.step.id && key(current) != listOf(it.stepId, it.roundIndex, it.setIndex) }
+            .maxByOrNull { it.completedAtEpochMillis ?: 0L }
+        saveTargetResult(
+            resultTarget = current,
+            reps = current.plannedReps ?: previousForExercise?.actualReps,
+            load = previousForExercise?.loadKg,
+            rpe = null,
+            rir = null,
+            pain = false,
+            painNote = "",
+            advance = true,
+        )
+    }
+
+    fun pauseWorkoutForSafety() {
+        if (!executionState.workoutStarted || executionState.paused) return
+        val now = System.currentTimeMillis()
+        persistExecution(
+            executionState.snapshotAt(now).copy(
+                paused = true,
+                workoutTickStartedAtEpochMillis = null,
+                timerTickStartedAtEpochMillis = null,
+            ),
+        )
+    }
+
+    LaunchedEffect(
+        session.id,
+        executionState.workoutStarted,
+        executionState.paused,
+        executionState.timerMode,
+        executionState.timerTickStartedAtEpochMillis,
+    ) {
+        while (session.status == SessionStatus.PLANNED && executionState.workoutStarted && !executionState.paused) {
+            clockEpochMillis = System.currentTimeMillis()
+            delay(250)
+        }
+    }
+    LaunchedEffect(workRemaining, restSeconds, executionState.timerMode, executionState.restAlerted) {
+        if (target?.workSeconds != null && workRemaining == 0 && executionState.timerMode == WorkoutTimerMode.SET) {
+            onTimerFinished(WorkoutTimerMode.SET)
+            quickCompleteCurrentTarget()
+        } else if (
+            restSeconds == 0 &&
+            executionState.timerMode == WorkoutTimerMode.REST &&
+            !executionState.restAlerted
+        ) {
+            val now = System.currentTimeMillis()
+            onTimerFinished(WorkoutTimerMode.REST)
+            persistExecution(executionState.snapshotAt(now).copy(restAlerted = true, timerTickStartedAtEpochMillis = now))
+        }
+    }
+    LaunchedEffect(loadBlocked, executionState.workoutStarted, executionState.paused) {
+        if (loadBlocked && executionState.workoutStarted && !executionState.paused) {
+            pauseWorkoutForSafety()
         }
     }
 
@@ -158,7 +361,7 @@ fun SessionScreen(
         },
     ) { innerPadding ->
         LazyColumn(
-            modifier = Modifier.fillMaxSize().padding(innerPadding),
+            modifier = Modifier.fillMaxSize().padding(innerPadding).testTag("session_content"),
             contentPadding = PaddingValues(20.dp),
             verticalArrangement = Arrangement.spacedBy(14.dp),
         ) {
@@ -166,17 +369,61 @@ fun SessionScreen(
                 Column(verticalArrangement = Arrangement.spacedBy(7.dp)) {
                     Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
                         Text(formatEpochDay(session.plannedEpochDay), color = MaterialTheme.colorScheme.primary)
-                        Text("${formatDuration(workoutSeconds)} · RPE ${session.targetRpe}")
+                        Text(
+                            if (executionState.workoutStarted) {
+                                "${formatDuration(workoutSeconds)} · RPE ${session.targetRpe}"
+                            } else {
+                                "Не начата · RPE ${session.targetRpe}"
+                            },
+                        )
                     }
                     Text(session.objective, style = MaterialTheme.typography.bodyMedium)
                     LinearProgressIndicator(
                         progress = { if (targets.isEmpty()) 0f else completedCount.toFloat() / targets.size },
                         modifier = Modifier.fillMaxWidth(),
                     )
-                    Text("Подходов выполнено: $completedCount из ${targets.size}", style = MaterialTheme.typography.labelMedium)
-                    OutlinedButton(onClick = { paused = !paused }, modifier = Modifier.fillMaxWidth()) {
-                        Icon(if (paused) Icons.Default.PlayArrow else Icons.Default.Pause, contentDescription = null)
-                        Text(if (paused) "  Продолжить тренировку" else "  Пауза")
+                    Text("Упражнений: ${steps.size} · этапов: ${targets.size}", style = MaterialTheme.typography.labelMedium)
+                    Text("Этапов выполнено: $completedCount из ${targets.size}", style = MaterialTheme.typography.labelMedium)
+                    if (session.status == SessionStatus.PLANNED && !executionState.workoutStarted) {
+                        Text(
+                            "Сначала посмотрите весь план. Таймер отдельного упражнения запускается только по вашей команде.",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    } else if (session.status == SessionStatus.PLANNED) {
+                        OutlinedButton(
+                            onClick = { showOverview = !showOverview },
+                            modifier = Modifier.fillMaxWidth().testTag("workout_overview_button"),
+                        ) {
+                            Icon(Icons.AutoMirrored.Filled.List, contentDescription = null)
+                            Text(if (showOverview) "  Вернуться к тренировке" else "  Весь план")
+                        }
+                        OutlinedButton(
+                            onClick = {
+                                val now = System.currentTimeMillis()
+                                val snapshot = executionState.snapshotAt(now)
+                                persistExecution(
+                                    if (paused) {
+                                        snapshot.copy(
+                                            paused = false,
+                                            workoutTickStartedAtEpochMillis = now,
+                                            timerTickStartedAtEpochMillis = if (snapshot.timerMode == WorkoutTimerMode.NONE) null else now,
+                                        )
+                                    } else {
+                                        snapshot.copy(
+                                            paused = true,
+                                            workoutTickStartedAtEpochMillis = null,
+                                            timerTickStartedAtEpochMillis = null,
+                                        )
+                                    },
+                                )
+                            },
+                            enabled = !(paused && loadBlocked),
+                            modifier = Modifier.fillMaxWidth(),
+                        ) {
+                            Icon(if (paused) Icons.Default.PlayArrow else Icons.Default.Pause, contentDescription = null)
+                            Text(if (paused) "  Продолжить тренировку" else "  Пауза")
+                        }
                     }
                 }
             }
@@ -188,7 +435,22 @@ fun SessionScreen(
             }
             if (loadBlocked) {
                 item {
-                    SafetyBanner("Тренировочная нагрузка заблокирована по сегодняшней оценке. $readinessRecommendation")
+                    Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                        SafetyBanner(
+                            "Тренировочная нагрузка заблокирована по сегодняшней оценке. " +
+                                if (readinessReasons.isEmpty()) {
+                                    readinessRecommendation
+                                } else {
+                                    "Причина: ${readinessReasons.joinToString("; ")}. $readinessRecommendation"
+                                },
+                        )
+                        OutlinedButton(
+                            onClick = onEditReadiness,
+                            modifier = Modifier.fillMaxWidth().testTag("edit_readiness_button"),
+                        ) {
+                            Text("Изменить сегодняшнюю оценку")
+                        }
+                    }
                 }
             } else if (adaptationRequired) {
                 item {
@@ -196,7 +458,62 @@ fun SessionScreen(
                 }
             }
 
-            target?.let { currentTarget ->
+            if (showOverview && session.status == SessionStatus.PLANNED) {
+                item {
+                    Card {
+                        Column(
+                            Modifier.fillMaxWidth().padding(18.dp),
+                            verticalArrangement = Arrangement.spacedBy(12.dp),
+                        ) {
+                            Text("Обзор тренировки", style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold)
+                            Text("${session.durationMinutes} мин · целевой RPE ${session.targetRpe}")
+                            Text(session.objective)
+                            targets.groupBy { it.blockId }.values.forEach { blockTargets ->
+                                val first = blockTargets.first()
+                                Text(
+                                    first.blockTitle + " · " + blockTypeLabel(first.blockType),
+                                    color = MaterialTheme.colorScheme.primary,
+                                    fontWeight = FontWeight.Bold,
+                                )
+                                blockTargets.distinctBy { it.step.id }.forEach { blockTarget ->
+                                    val count = blockTargets.count { it.step.id == blockTarget.step.id }
+                                    Text(
+                                        "• ${blockTarget.step.title} — ${blockTarget.step.prescription}" +
+                                            if (count > 1) " · $count этапа" else "",
+                                    )
+                                }
+                                blockTargets.maxOfOrNull { it.restAfterSeconds }
+                                    ?.takeIf { it > 0 }
+                                    ?.let { Text("Отдых: до $it сек") }
+                            }
+                        }
+                    }
+                }
+                item {
+                    Button(
+                        onClick = {
+                            if (!executionState.workoutStarted) {
+                                val now = System.currentTimeMillis()
+                                persistExecution(
+                                    executionState.snapshotAt(now).copy(
+                                        workoutStarted = true,
+                                        paused = false,
+                                        workoutTickStartedAtEpochMillis = now,
+                                    ),
+                                )
+                            }
+                            showOverview = false
+                        },
+                        enabled = !loadBlocked,
+                        modifier = Modifier.fillMaxWidth().testTag("start_workout_button"),
+                    ) {
+                        Icon(Icons.Default.PlayArrow, contentDescription = null)
+                        Text(if (executionState.workoutStarted) "  Продолжить тренировку" else "  Начать тренировку")
+                    }
+                }
+            }
+
+            if (!showOverview) target?.let { currentTarget ->
                 val current = currentTarget.step
                 item {
                     Text(
@@ -208,12 +525,183 @@ fun SessionScreen(
                         when {
                             currentTarget.totalRounds > 1 -> "Круг ${currentTarget.roundIndex} из ${currentTarget.totalRounds} · ${blockTypeLabel(currentTarget.blockType)}"
                             currentTarget.totalSets > 1 -> "Подход ${currentTarget.setIndex} из ${currentTarget.totalSets} · ${blockTypeLabel(currentTarget.blockType)}"
-                            else -> "Шаг ${targetIndex + 1} из ${targets.size} · ${blockTypeLabel(currentTarget.blockType)}"
+                            else -> "Этап ${targetIndex + 1} из ${targets.size} · ${blockTypeLabel(currentTarget.blockType)}"
                         },
                         style = MaterialTheme.typography.labelMedium,
                     )
                     Text(current.title, style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold)
                     Text(current.prescription, style = MaterialTheme.typography.titleMedium, color = MaterialTheme.colorScheme.primary)
+                }
+                if (executionState.timerMode == WorkoutTimerMode.REST) {
+                    item {
+                        Card {
+                            Column(
+                                Modifier.fillMaxWidth().padding(22.dp),
+                                horizontalAlignment = Alignment.CenterHorizontally,
+                                verticalArrangement = Arrangement.spacedBy(8.dp),
+                            ) {
+                                Text(if (restSeconds > 0) "Отдых" else "Отдых завершён", fontWeight = FontWeight.Bold)
+                                Text(
+                                    if (restSeconds > 0) "$restSeconds сек" else "+${formatDuration(restOvertimeSeconds)}",
+                                    style = MaterialTheme.typography.headlineMedium,
+                                    color = if (restSeconds == 0) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface,
+                                )
+                                Text("Прошло: ${formatDuration(restElapsedSeconds)} · план: ${formatDuration(executionState.restPlannedSeconds)}")
+                                Button(
+                                    onClick = { finishRest(skipped = restSeconds > 0) },
+                                    modifier = Modifier.fillMaxWidth().testTag("finish_rest_button"),
+                                ) {
+                                    Text(if (restSeconds > 0) "Завершить отдых сейчас" else "Перейти к следующему этапу")
+                                }
+                            }
+                        }
+                    }
+                }
+                if (session.status == SessionStatus.PLANNED && executionState.timerMode != WorkoutTimerMode.REST) {
+                    item {
+                        Card {
+                            Column(
+                                Modifier.fillMaxWidth().padding(18.dp),
+                                horizontalAlignment = Alignment.CenterHorizontally,
+                                verticalArrangement = Arrangement.spacedBy(8.dp),
+                            ) {
+                                Text(if (currentTarget.workSeconds != null) "Таймер упражнения" else "Секундомер подхода", fontWeight = FontWeight.Bold)
+                                Text(
+                                    if (currentTarget.workSeconds != null) formatDuration(workRemaining) else formatDuration(setSeconds),
+                                    style = MaterialTheme.typography.headlineMedium,
+                                )
+                                if (currentLog != null) {
+                                    Text(
+                                        buildString {
+                                            append("Записано")
+                                            currentLog.actualReps?.let { append(" · $it повт.") }
+                                            currentLog.loadKg?.let { append(" · $it кг") }
+                                            currentLog.actualRpe?.let { append(" · RPE $it") }
+                                        },
+                                        color = MaterialTheme.colorScheme.primary,
+                                    )
+                                    OutlinedButton(
+                                        onClick = {
+                                            editResultOnly = true
+                                            showSetResult = true
+                                        },
+                                        modifier = Modifier.fillMaxWidth(),
+                                    ) {
+                                        Text("Изменить запись")
+                                    }
+                                } else {
+                                    val timerUnit = if (currentTarget.totalSets > 1) "подход" else "этап"
+                                    OutlinedButton(
+                                        onClick = {
+                                            val now = System.currentTimeMillis()
+                                            val snapshot = executionState.snapshotAt(now)
+                                            persistExecution(
+                                                if (setRunning) {
+                                                    snapshot.copy(timerMode = WorkoutTimerMode.NONE, timerTickStartedAtEpochMillis = null)
+                                                } else {
+                                                    val restartTimedSet = currentTarget.workSeconds != null && snapshot.workRemainingSeconds == 0
+                                                    snapshot.copy(
+                                                        workoutStarted = true,
+                                                        paused = false,
+                                                        workoutTickStartedAtEpochMillis =
+                                                            if (snapshot.workoutStarted) snapshot.workoutTickStartedAtEpochMillis else now,
+                                                        timerMode = WorkoutTimerMode.SET,
+                                                        timerTickStartedAtEpochMillis = now,
+                                                        setElapsedSeconds = if (restartTimedSet) 0 else snapshot.setElapsedSeconds,
+                                                        workRemainingSeconds = if (restartTimedSet) currentTarget.workSeconds else snapshot.workRemainingSeconds,
+                                                    )
+                                                },
+                                            )
+                                        },
+                                        enabled = !loadBlocked && !paused,
+                                        modifier = Modifier.fillMaxWidth().testTag("set_timer_button"),
+                                    ) {
+                                        Icon(if (setRunning) Icons.Default.Pause else Icons.Default.PlayArrow, contentDescription = null)
+                                        Text(
+                                            when {
+                                                setRunning -> "  Приостановить $timerUnit"
+                                                else -> "  Начать $timerUnit"
+                                            },
+                                        )
+                                    }
+                                    val timerHasProgress = currentTarget.workSeconds?.let { workRemaining < it } ?: (setSeconds > 0)
+                                    if (timerHasProgress) {
+                                        TextButton(
+                                            onClick = { showResetTimerConfirm = true },
+                                            modifier = Modifier.fillMaxWidth().testTag("reset_set_timer_button"),
+                                        ) {
+                                            Text("Сбросить таймер упражнения")
+                                        }
+                                    }
+                                    Button(
+                                        onClick = { quickCompleteCurrentTarget() },
+                                        enabled = executionState.workoutStarted && !loadBlocked && !paused,
+                                        modifier = Modifier.fillMaxWidth().testTag("complete_set_button"),
+                                    ) {
+                                        Icon(Icons.Default.Check, contentDescription = null)
+                                        Text(
+                                            if (setSeconds == 0) "  Готово без таймера" else "  Готово · ${formatDuration(setSeconds)}",
+                                        )
+                                    }
+                                    TextButton(
+                                        onClick = {
+                                            editResultOnly = false
+                                            val now = System.currentTimeMillis()
+                                            persistExecution(
+                                                executionState.snapshotAt(now).copy(
+                                                    timerMode = WorkoutTimerMode.NONE,
+                                                    timerTickStartedAtEpochMillis = null,
+                                                ),
+                                            )
+                                            showSetResult = true
+                                        },
+                                        enabled = executionState.workoutStarted && !loadBlocked && !paused,
+                                        modifier = Modifier.fillMaxWidth().testTag("detailed_set_result_button"),
+                                    ) {
+                                        Text("Записать подробнее")
+                                    }
+                                }
+                            }
+                        }
+                        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                            OutlinedButton(
+                                onClick = { if (targetIndex > 0) selectTarget(targetIndex - 1) },
+                                enabled = targetIndex > 0,
+                                modifier = Modifier.weight(1f),
+                            ) { Text("Назад") }
+                            OutlinedButton(
+                                onClick = {
+                                    if (currentLog == null) {
+                                        showSkipStage = true
+                                    } else if (targetIndex < targets.lastIndex) {
+                                        selectTarget(targetIndex + 1)
+                                    } else {
+                                        showCompletion = true
+                                    }
+                                },
+                                modifier = Modifier.weight(1f).testTag("next_stage_button"),
+                            ) {
+                                Icon(Icons.Default.SkipNext, contentDescription = null)
+                                Text(if (targetIndex == targets.lastIndex) "  Итог" else if (currentLog == null) "  Пропустить" else "  Далее")
+                            }
+                        }
+                        OutlinedButton(
+                            onClick = {
+                                pauseWorkoutForSafety()
+                                showPainStop = true
+                            },
+                            modifier = Modifier.fillMaxWidth(),
+                        ) {
+                            Text("Возникла боль — остановиться")
+                        }
+                    }
+                }
+                item {
+                    Text(
+                        "Техника выполнения",
+                        style = MaterialTheme.typography.titleMedium,
+                        fontWeight = FontWeight.Bold,
+                    )
                 }
                 item { ExerciseIllustration(current.imageKey()) }
                 item {
@@ -241,88 +729,6 @@ fun SessionScreen(
                                     mistakes.forEach { Text("• $it", style = MaterialTheme.typography.bodySmall) }
                                 }
                             }
-                        }
-                    }
-                }
-                if (restSeconds > 0) {
-                    item {
-                        Card {
-                            Column(
-                                Modifier.fillMaxWidth().padding(22.dp),
-                                horizontalAlignment = Alignment.CenterHorizontally,
-                                verticalArrangement = Arrangement.spacedBy(8.dp),
-                            ) {
-                                Text("Отдых", fontWeight = FontWeight.Bold)
-                                Text("$restSeconds сек", style = MaterialTheme.typography.headlineMedium)
-                                TextButton(onClick = { restSeconds = 0 }) { Text("Пропустить таймер") }
-                            }
-                        }
-                    }
-                }
-                if (session.status == SessionStatus.PLANNED && restSeconds == 0) {
-                    item {
-                        Card {
-                            Column(
-                                Modifier.fillMaxWidth().padding(18.dp),
-                                horizontalAlignment = Alignment.CenterHorizontally,
-                                verticalArrangement = Arrangement.spacedBy(8.dp),
-                            ) {
-                                Text(if (currentTarget.workSeconds != null) "Таймер упражнения" else "Секундомер подхода", fontWeight = FontWeight.Bold)
-                                Text(
-                                    if (currentTarget.workSeconds != null) formatDuration(workRemaining) else formatDuration(setSeconds),
-                                    style = MaterialTheme.typography.headlineMedium,
-                                )
-                                if (currentLog != null) {
-                                    Text(
-                                        buildString {
-                                            append("Записано")
-                                            currentLog.actualReps?.let { append(" · $it повт.") }
-                                            currentLog.loadKg?.let { append(" · $it кг") }
-                                            currentLog.actualRpe?.let { append(" · RPE $it") }
-                                        },
-                                        color = MaterialTheme.colorScheme.primary,
-                                    )
-                                    OutlinedButton(onClick = { showSetResult = true }, modifier = Modifier.fillMaxWidth()) {
-                                        Text("Изменить запись")
-                                    }
-                                } else {
-                                    OutlinedButton(
-                                        onClick = { setRunning = !setRunning },
-                                        enabled = !loadBlocked && !paused,
-                                        modifier = Modifier.fillMaxWidth(),
-                                    ) {
-                                        Icon(if (setRunning) Icons.Default.Pause else Icons.Default.PlayArrow, contentDescription = null)
-                                        Text(if (setRunning) "  Приостановить подход" else "  Начать подход")
-                                    }
-                                    Button(
-                                        onClick = { setRunning = false; showSetResult = true },
-                                        enabled = !loadBlocked && !paused,
-                                        modifier = Modifier.fillMaxWidth(),
-                                    ) {
-                                        Icon(Icons.Default.Check, contentDescription = null)
-                                        Text("  Завершить и записать")
-                                    }
-                                }
-                            }
-                        }
-                        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                            OutlinedButton(
-                                onClick = { if (targetIndex > 0) targetIndex -= 1 },
-                                enabled = targetIndex > 0,
-                                modifier = Modifier.weight(1f),
-                            ) { Text("Назад") }
-                            OutlinedButton(
-                                onClick = {
-                                    if (targetIndex < targets.lastIndex) targetIndex += 1 else showCompletion = true
-                                },
-                                modifier = Modifier.weight(1f),
-                            ) {
-                                Icon(Icons.Default.SkipNext, contentDescription = null)
-                                Text(if (targetIndex == targets.lastIndex) "  Итог" else if (currentLog == null) "  Пропустить" else "  Далее")
-                            }
-                        }
-                        OutlinedButton(onClick = { showPainStop = true }, modifier = Modifier.fillMaxWidth()) {
-                            Text("Возникла боль — остановиться")
                         }
                     }
                 }
@@ -354,45 +760,31 @@ fun SessionScreen(
     if (showCompletion) {
         CompletionDialog(
             initialRpe = session.targetRpe,
+            actualDurationSeconds = workoutSeconds,
             onDismiss = { showCompletion = false },
-            onConfirm = { rpe, notes -> onComplete(session.id, rpe, notes) },
+            onConfirm = { rpe, notes -> onComplete(session.id, rpe, notes, workoutSeconds) },
         )
     }
     if (showSetResult && target != null) {
         SetResultDialog(
             target = target,
             elapsedSeconds = setSeconds,
+            initialRpe = session.targetRpe,
             existing = currentLog,
             onDismiss = { showSetResult = false },
             onConfirm = { reps, load, rpe, rir, pain, painNote ->
-                val now = System.currentTimeMillis()
-                val loggedElapsed = setSeconds.takeIf { it > 0 } ?: currentLog?.elapsedSeconds ?: 0
-                onSaveSetLog(
-                    SessionSetLogEntity(
-                        sessionId = session.id,
-                        stepId = target.step.id,
-                        roundIndex = target.roundIndex,
-                        setIndex = target.setIndex,
-                        plannedReps = target.plannedReps,
-                        actualReps = reps,
-                        loadKg = load,
-                        actualRpe = rpe,
-                        rir = rir,
-                        pain = pain,
-                        painNote = painNote,
-                        startedAtEpochMillis = now - loggedElapsed * 1_000L,
-                        completedAtEpochMillis = now,
-                        elapsedSeconds = loggedElapsed,
-                        completed = true,
-                    ),
+                saveTargetResult(
+                    resultTarget = target,
+                    reps = reps,
+                    load = load,
+                    rpe = rpe,
+                    rir = rir,
+                    pain = pain,
+                    painNote = painNote,
+                    advance = !editResultOnly,
                 )
-                val otherTargetsForStepDone = targets.filter { it.step.id == target.step.id && key(it) != key(target) }
-                    .all { key(it) in completedTargetKeys }
-                if (otherTargetsForStepDone) onStepCompleted(session.id, target.step.id, true)
                 showSetResult = false
-                restSeconds = target.restAfterSeconds
-                if (pain) showPainStop = true
-                if (targetIndex < targets.lastIndex) targetIndex += 1 else if (!pain) showCompletion = true
+                editResultOnly = false
             },
         )
     }
@@ -402,6 +794,70 @@ fun SessionScreen(
             confirmLabel = "Сохранить",
             onDismiss = { showSkip = false },
             onConfirm = { onSkip(session.id, it) },
+        )
+    }
+    if (showSkipStage && target != null) {
+        NotesDialog(
+            title = "Почему пропускаете этап?",
+            confirmLabel = "Пропустить этап",
+            onDismiss = { showSkipStage = false },
+            onConfirm = { reason ->
+                val now = System.currentTimeMillis()
+                val snapshot = executionState.snapshotAt(now)
+                onSaveSetLog(
+                    SessionSetLogEntity(
+                        sessionId = session.id,
+                        stepId = target.step.id,
+                        roundIndex = target.roundIndex,
+                        setIndex = target.setIndex,
+                        plannedReps = target.plannedReps,
+                        actualReps = null,
+                        loadKg = null,
+                        actualRpe = null,
+                        rir = null,
+                        pain = false,
+                        painNote = "Пропуск этапа: ${reason.ifBlank { "без причины" }}",
+                        startedAtEpochMillis = now - snapshot.setElapsedSeconds * 1_000L,
+                        completedAtEpochMillis = now,
+                        elapsedSeconds = snapshot.setElapsedSeconds,
+                        timingStatus = if (snapshot.setElapsedSeconds > 0) SetTimingStatus.RECORDED else SetTimingStatus.NOT_USED,
+                        plannedRestSeconds = target.restAfterSeconds,
+                        completed = false,
+                    ),
+                )
+                persistExecution(
+                    snapshot.copy(
+                        timerMode = WorkoutTimerMode.NONE,
+                        timerTickStartedAtEpochMillis = null,
+                    ),
+                )
+                showSkipStage = false
+                if (targetIndex < targets.lastIndex) selectTarget(targetIndex + 1) else showCompletion = true
+            },
+        )
+    }
+    if (showResetTimerConfirm && target != null) {
+        AlertDialog(
+            onDismissRequest = { showResetTimerConfirm = false },
+            title = { Text("Сбросить таймер этапа?") },
+            text = { Text("Текущее время этого этапа будет обнулено. Общий таймер тренировки сохранится.") },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        val now = System.currentTimeMillis()
+                        persistExecution(
+                            executionState.snapshotAt(now).copy(
+                                timerMode = WorkoutTimerMode.NONE,
+                                timerTickStartedAtEpochMillis = null,
+                                setElapsedSeconds = 0,
+                                workRemainingSeconds = target.workSeconds ?: 0,
+                            ),
+                        )
+                        showResetTimerConfirm = false
+                    },
+                ) { Text("Сбросить") }
+            },
+            dismissButton = { TextButton(onClick = { showResetTimerConfirm = false }) { Text("Отмена") } },
         )
     }
     if (showPainStop) {
@@ -417,7 +873,7 @@ fun SessionScreen(
             confirmButton = {
                 TextButton(onClick = { onSkip(session.id, "Тренировка остановлена из-за боли") }) { Text("Завершить и сохранить") }
             },
-            dismissButton = { TextButton(onClick = { showPainStop = false }) { Text("Пауза") } },
+            dismissButton = { TextButton(onClick = { showPainStop = false }) { Text("Остаться на паузе") } },
         )
     }
 }
@@ -426,34 +882,40 @@ fun SessionScreen(
 private fun SetResultDialog(
     target: WorkoutSetTarget,
     elapsedSeconds: Int,
+    initialRpe: Int,
     existing: SessionSetLogEntity?,
     onDismiss: () -> Unit,
     onConfirm: (Int?, Double?, Int, Int?, Boolean, String) -> Unit,
 ) {
     var reps by remember { mutableStateOf((existing?.actualReps ?: target.plannedReps)?.toString().orEmpty()) }
     var load by remember { mutableStateOf(existing?.loadKg?.toString().orEmpty()) }
-    var rpe by remember { mutableFloatStateOf((existing?.actualRpe ?: 5).toFloat()) }
+    var rpe by remember { mutableFloatStateOf((existing?.actualRpe ?: initialRpe).toFloat()) }
     var rir by remember { mutableStateOf(existing?.rir?.toString().orEmpty()) }
     var pain by remember { mutableStateOf(existing?.pain ?: false) }
     var painNote by remember { mutableStateOf(existing?.painNote.orEmpty()) }
+    val timedStage = target.workSeconds != null
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text("Результат подхода") },
+        title = { Text(if (timedStage) "Результат этапа" else "Результат подхода") },
         text = {
             LazyColumn(verticalArrangement = Arrangement.spacedBy(10.dp)) {
                 item { Text("${target.step.title} · ${formatDuration(elapsedSeconds)}") }
-                item {
-                    OutlinedTextField(reps, { reps = it.filter(Char::isDigit) }, label = { Text("Повторения") }, modifier = Modifier.fillMaxWidth())
+                if (!timedStage) {
+                    item {
+                        OutlinedTextField(reps, { reps = it.filter(Char::isDigit) }, label = { Text("Повторения") }, modifier = Modifier.fillMaxWidth())
+                    }
+                    item {
+                        OutlinedTextField(load, { load = it.replace(',', '.').filter { c -> c.isDigit() || c == '.' } }, label = { Text("Вес, кг (необязательно)") }, modifier = Modifier.fillMaxWidth())
+                    }
                 }
                 item {
-                    OutlinedTextField(load, { load = it.replace(',', '.').filter { c -> c.isDigit() || c == '.' } }, label = { Text("Вес, кг (необязательно)") }, modifier = Modifier.fillMaxWidth())
-                }
-                item {
-                    Text("RPE подхода: ${rpe.toInt()}/10")
+                    Text("RPE ${if (timedStage) "этапа" else "подхода"}: ${rpe.toInt()}/10")
                     Slider(rpe, { rpe = it }, valueRange = 1f..10f, steps = 8)
                 }
-                item {
-                    OutlinedTextField(rir, { rir = it.filter(Char::isDigit).take(1) }, label = { Text("Повторов в запасе, RIR") }, modifier = Modifier.fillMaxWidth())
+                if (!timedStage) {
+                    item {
+                        OutlinedTextField(rir, { rir = it.filter(Char::isDigit).take(1) }, label = { Text("Повторов в запасе, RIR") }, modifier = Modifier.fillMaxWidth())
+                    }
                 }
                 item {
                     Row(verticalAlignment = Alignment.CenterVertically) {
@@ -469,10 +931,10 @@ private fun SetResultDialog(
         confirmButton = {
             Button(onClick = {
                 onConfirm(
-                    reps.toIntOrNull(),
-                    load.toDoubleOrNull(),
+                    reps.toIntOrNull().takeUnless { timedStage },
+                    load.toDoubleOrNull().takeUnless { timedStage },
                     rpe.toInt(),
-                    rir.toIntOrNull()?.coerceIn(0, 5),
+                    rir.toIntOrNull()?.coerceIn(0, 5).takeUnless { timedStage },
                     pain,
                     painNote.trim(),
                 )
@@ -542,7 +1004,12 @@ private fun Instruction(title: String, text: String) {
 }
 
 @Composable
-private fun CompletionDialog(initialRpe: Int, onDismiss: () -> Unit, onConfirm: (Int, String) -> Unit) {
+private fun CompletionDialog(
+    initialRpe: Int,
+    actualDurationSeconds: Int,
+    onDismiss: () -> Unit,
+    onConfirm: (Int, String) -> Unit,
+) {
     var rpe by remember { mutableFloatStateOf(initialRpe.toFloat()) }
     var notes by remember { mutableStateOf("") }
     AlertDialog(
@@ -550,6 +1017,7 @@ private fun CompletionDialog(initialRpe: Int, onDismiss: () -> Unit, onConfirm: 
         title = { Text("Итог тренировки") },
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                Text("Фактическое время: ${formatDuration(actualDurationSeconds)}")
                 Text("Фактический RPE: ${rpe.toInt()}/10")
                 Slider(value = rpe, onValueChange = { rpe = it }, valueRange = 1f..10f, steps = 8)
                 OutlinedTextField(

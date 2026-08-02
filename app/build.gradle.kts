@@ -3,6 +3,7 @@ plugins {
     alias(libs.plugins.kotlin.android)
     alias(libs.plugins.kotlin.compose)
     alias(libs.plugins.kotlin.serialization)
+    id("kotlin-parcelize")
     alias(libs.plugins.ksp)
     alias(libs.plugins.room)
 }
@@ -15,14 +16,17 @@ android {
         applicationId = "ru.yakovenko.mountainform"
         minSdk = 28
         targetSdk = 36
-        versionCode = 3
-        versionName = "0.3.0"
+        versionCode = 8
+        versionName = "0.3.5"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         vectorDrawables.useSupportLibrary = true
         val updateManifestUrl = providers.gradleProperty("updateManifestUrl")
             .getOrElse("https://yakovenkoalg-collab.github.io/hiking-trainer/latest.json")
+        val yandexClientId = providers.gradleProperty("yandexClientId").getOrElse("").trim()
         buildConfigField("String", "UPDATE_MANIFEST_URL", "\"$updateManifestUrl\"")
+        buildConfigField("String", "YANDEX_CLIENT_ID", "\"$yandexClientId\"")
+        manifestPlaceholders["YANDEX_CLIENT_ID"] = yandexClientId.ifBlank { "not-configured" }
     }
 
     buildTypes {
@@ -94,6 +98,7 @@ dependencies {
     implementation(libs.androidx.documentfile)
     implementation(libs.kotlinx.serialization.json)
     implementation(libs.garmin.fit)
+    implementation(libs.yandex.auth)
 
     testImplementation(libs.junit)
     testImplementation(libs.kotlinx.coroutines.test)

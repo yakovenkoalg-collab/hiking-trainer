@@ -47,6 +47,7 @@ data class TrainingSessionEntity(
     val status: String = SessionStatus.PLANNED,
     val completedAtEpochMillis: Long? = null,
     val actualRpe: Int? = null,
+    @ColumnInfo(defaultValue = "0") val actualDurationSeconds: Int = 0,
     val completionNotes: String = "",
     val planVersion: Int = 1,
     @ColumnInfo(defaultValue = "0") val originalEpochDay: Long = plannedEpochDay,
@@ -190,8 +191,17 @@ data class SessionSetLogEntity(
     val startedAtEpochMillis: Long? = null,
     val completedAtEpochMillis: Long? = null,
     val elapsedSeconds: Int = 0,
+    @ColumnInfo(defaultValue = "'NOT_USED'") val timingStatus: String = SetTimingStatus.NOT_USED,
+    @ColumnInfo(defaultValue = "0") val plannedRestSeconds: Int = 0,
+    val actualRestSeconds: Int? = null,
+    @ColumnInfo(defaultValue = "0") val restSkipped: Boolean = false,
     val completed: Boolean = false,
 )
+
+object SetTimingStatus {
+    const val RECORDED = "RECORDED"
+    const val NOT_USED = "NOT_USED"
+}
 
 @Serializable
 @Entity(tableName = "review_checkpoints")
@@ -276,7 +286,7 @@ data class PlanSession(
 
 @Serializable
 data class ReportEnvelope(
-    val schemaVersion: Int = 2,
+    val schemaVersion: Int = 3,
     val generatedAtEpochMillis: Long,
     val periodStartEpochDay: Long,
     val periodEndEpochDay: Long,
@@ -316,6 +326,7 @@ data class ReportSession(
     val status: String,
     val targetRpe: Int,
     val actualRpe: Int?,
+    val actualDurationSeconds: Int,
     val notes: String,
 )
 
@@ -352,6 +363,10 @@ data class ReportSetLog(
     val pain: Boolean,
     val painNote: String,
     val elapsedSeconds: Int,
+    val timingStatus: String,
+    val plannedRestSeconds: Int,
+    val actualRestSeconds: Int?,
+    val restSkipped: Boolean,
 )
 
 @Serializable

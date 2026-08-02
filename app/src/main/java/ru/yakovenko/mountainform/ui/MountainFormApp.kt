@@ -7,6 +7,12 @@ import androidx.compose.material.icons.filled.DateRange
 import androidx.compose.material.icons.filled.Home
 import androidx.compose.material.icons.filled.MoreHoriz
 import androidx.compose.material3.AlertDialog
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.material3.Card
 import androidx.compose.material3.Icon
 import androidx.compose.material3.NavigationBar
 import androidx.compose.material3.NavigationBarItem
@@ -16,6 +22,7 @@ import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -23,7 +30,10 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.navigation.NavGraph.Companion.findStartDestination
 import androidx.navigation.compose.NavHost
@@ -42,6 +52,7 @@ import ru.yakovenko.mountainform.ui.screens.ProgressScreen
 import ru.yakovenko.mountainform.ui.screens.RemindersScreen
 import ru.yakovenko.mountainform.ui.screens.SessionScreen
 import ru.yakovenko.mountainform.ui.screens.TodayScreen
+import ru.yakovenko.mountainform.data.PlanSessionSummary
 
 private data class TopDestination(val route: String, val label: String, val icon: ImageVector)
 
@@ -61,6 +72,8 @@ fun MountainFormApp(
     viewModel: AppViewModel,
     onRequestHealthPermissions: () -> Unit,
     onRequestNotificationPermission: () -> Unit,
+    yandexLoginConfigured: Boolean,
+    onRequestYandexLogin: (String) -> Unit,
     initialPrivacyPolicy: Boolean = false,
 ) {
     val state by viewModel.uiState.collectAsStateWithLifecycle()
@@ -71,11 +84,16 @@ fun MountainFormApp(
     val updateState by viewModel.updateState.collectAsStateWithLifecycle()
     val yandexConnected by viewModel.yandexConnected.collectAsStateWithLifecycle()
     val context = LocalContext.current
+    val workoutSignal = remember(context) { WorkoutSignal(context.applicationContext) }
+    DisposableEffect(workoutSignal) {
+        onDispose { workoutSignal.release() }
+    }
     val navController = rememberNavController()
     val backStack by navController.currentBackStackEntryAsState()
     val currentRoute = backStack?.destination?.route.orEmpty()
     val snackbarHostState = remember { SnackbarHostState() }
     var showPrivacyPolicy by rememberSaveable { mutableStateOf(initialPrivacyPolicy) }
+    var openReadinessOnToday by rememberSaveable { mutableStateOf(false) }
 
     LaunchedEffect(message) {
         message?.let {
@@ -126,6 +144,8 @@ fun MountainFormApp(
                             context.startActivity(Intent.createChooser(intent, "Отправить отчёт"))
                         }
                     },
+                    openReadiness = openReadinessOnToday,
+                    onReadinessOpened = { openReadinessOnToday = false },
                 )
             }
             composable("calendar") {
@@ -198,7 +218,8 @@ fun MountainFormApp(
                     onCreateBackup = viewModel::createSharedBackup,
                     onRestoreBackup = viewModel::previewBackup,
                     yandexConnected = yandexConnected,
-                    onConnectYandex = viewModel::connectYandex,
+                    yandexLoginConfigured = yandexLoginConfigured,
+                    onConnectYandex = onRequestYandexLogin,
                     onDisconnectYandex = viewModel::disconnectYandex,
                     onSyncYandex = viewModel::syncYandex,
                     onCreateYandexBackup = viewModel::createYandexBackup,
@@ -242,6 +263,7 @@ fun MountainFormApp(
             composable("session/{sessionId}") { entry ->
                 val id = entry.arguments?.getString("sessionId")
                 val session = state.sessions.firstOrNull { it.id == id }
+                val initialExecutionState = remember(id) { id?.let(viewModel::loadWorkoutExecution) }
                 SessionScreen(
                     padding = padding,
                     session = session,
@@ -253,14 +275,28 @@ fun MountainFormApp(
                     loadBlocked = state.readinessDecision.level == ru.yakovenko.mountainform.domain.ReadinessLevel.RED,
                     adaptationRequired = state.readinessDecision.level == ru.yakovenko.mountainform.domain.ReadinessLevel.YELLOW,
                     readinessRecommendation = state.readinessDecision.recommendation,
+                    readinessReasons = state.readinessDecision.reasons,
+                    initialExecutionState = initialExecutionState,
+                    onExecutionStateChanged = viewModel::saveWorkoutExecution,
                     onStepCompleted = viewModel::setStepCompleted,
                     onSaveSetLog = viewModel::saveSetLog,
                     onBack = { navController.popBackStack() },
-                    onComplete = { sessionId, rpe, notes ->
-                        viewModel.completeSession(sessionId, rpe, notes)
+                    onEditReadiness = {
+                        openReadinessOnToday = true
+                        navController.navigate("today") {
+                            popUpTo(navController.graph.findStartDestination().id) { saveState = true }
+                            launchSingleTop = true
+                            restoreState = true
+                        }
+                    },
+                    onTimerFinished = workoutSignal::play,
+                    onComplete = { sessionId, rpe, notes, actualDurationSeconds ->
+                        viewModel.clearWorkoutExecution(sessionId)
+                        viewModel.completeSession(sessionId, rpe, notes, actualDurationSeconds)
                         navController.popBackStack()
                     },
                     onSkip = { sessionId, reason ->
+                        viewModel.clearWorkoutExecution(sessionId)
                         viewModel.skipSession(sessionId, reason)
                         navController.popBackStack()
                     },
@@ -274,19 +310,51 @@ fun MountainFormApp(
             onDismissRequest = viewModel::dismissImport,
             title = { Text("Предпросмотр нового плана") },
             text = {
-                Text(buildString {
-                    append("Автор: ${preview.plan.author}\n")
-                    append("Причина: ${preview.plan.reason}\n\n")
-                    append("Новых тренировок: ${preview.added}\n")
-                    append("Обновляемых: ${preview.updated}\n")
-                    if (preview.conflicts.isNotEmpty()) {
-                        append("\nКонфликты:\n")
-                        append(preview.conflicts.joinToString("\n• ", prefix = "• "))
+                LazyColumn(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                    item {
+                        Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                            Text("Автор: ${preview.plan.author}", fontWeight = FontWeight.SemiBold)
+                            Text(preview.plan.reason)
+                            Text("Добавится: ${preview.added} · изменится: ${preview.updated}")
+                            if (preview.preservedHistory > 0) {
+                                Text("История сохранена без изменений: ${preview.preservedHistory}")
+                            }
+                        }
                     }
-                })
+                    if (preview.conflicts.isNotEmpty()) {
+                        item { Text("Конфликты — план нельзя применить", fontWeight = FontWeight.Bold) }
+                        items(preview.conflicts.size) { index -> Text("• ${preview.conflicts[index]}") }
+                    }
+                    if (preview.changes.isEmpty()) {
+                        item { Text("Применимых изменений нет: существующая история останется без изменений.") }
+                    }
+                    items(preview.changes.size) { index ->
+                        val change = preview.changes[index]
+                        Card {
+                            Column(
+                                Modifier.fillMaxWidth().padding(12.dp),
+                                verticalArrangement = Arrangement.spacedBy(8.dp),
+                            ) {
+                                Text(
+                                    if (change.before == null) "Добавится тренировка" else "Изменится тренировка",
+                                    fontWeight = FontWeight.Bold,
+                                )
+                                change.before?.let {
+                                    Text("Было", fontWeight = FontWeight.SemiBold)
+                                    PlanSummary(it)
+                                }
+                                Text(if (change.before == null) "План" else "Станет", fontWeight = FontWeight.SemiBold)
+                                PlanSummary(change.after)
+                            }
+                        }
+                    }
+                }
             },
             confirmButton = {
-                TextButton(enabled = preview.conflicts.isEmpty(), onClick = viewModel::applyImport) { Text("Применить") }
+                TextButton(
+                    enabled = preview.conflicts.isEmpty() && preview.changes.isNotEmpty(),
+                    onClick = viewModel::applyImport,
+                ) { Text("Применить") }
             },
             dismissButton = { TextButton(onClick = viewModel::dismissImport) { Text("Отмена") } },
         )
@@ -321,5 +389,14 @@ fun MountainFormApp(
             },
             confirmButton = { TextButton(onClick = { showPrivacyPolicy = false }) { Text("Понятно") } },
         )
+    }
+}
+
+@Composable
+private fun PlanSummary(summary: PlanSessionSummary) {
+    Column(verticalArrangement = Arrangement.spacedBy(3.dp)) {
+        Text("${formatEpochDay(summary.plannedEpochDay)} · ${summary.title}")
+        Text("${summary.durationMinutes} мин · RPE ${summary.targetRpe}")
+        summary.exercises.forEach { Text("• $it", style = androidx.compose.material3.MaterialTheme.typography.bodySmall) }
     }
 }

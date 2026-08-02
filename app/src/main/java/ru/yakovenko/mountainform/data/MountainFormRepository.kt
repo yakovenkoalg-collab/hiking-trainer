@@ -12,7 +12,22 @@ data class ImportPreview(
     val plan: PlanEnvelope,
     val added: Int,
     val updated: Int,
+    val preservedHistory: Int,
     val conflicts: List<String>,
+    val changes: List<PlanSessionChange>,
+)
+
+data class PlanSessionChange(
+    val before: PlanSessionSummary?,
+    val after: PlanSessionSummary,
+)
+
+data class PlanSessionSummary(
+    val plannedEpochDay: Long,
+    val title: String,
+    val durationMinutes: Int,
+    val targetRpe: Int,
+    val exercises: List<String>,
 )
 
 class MountainFormRepository(
@@ -21,6 +36,7 @@ class MountainFormRepository(
         prettyPrint = true
         ignoreUnknownKeys = false
         explicitNulls = false
+        encodeDefaults = true
     },
 ) {
     val profile: Flow<UserProfileEntity?> = dao.observeProfile()
@@ -164,13 +180,14 @@ class MountainFormRepository(
         )
     }
 
-    suspend fun completeSession(id: String, rpe: Int, notes: String) {
+    suspend fun completeSession(id: String, rpe: Int, notes: String, actualDurationSeconds: Int) {
         val session = dao.getSessions().firstOrNull { it.id == id } ?: return
         dao.upsertSession(
             session.copy(
                 status = SessionStatus.COMPLETED,
                 completedAtEpochMillis = System.currentTimeMillis(),
                 actualRpe = rpe,
+                actualDurationSeconds = actualDurationSeconds.coerceAtLeast(0),
                 completionNotes = notes.trim(),
             ),
         )
@@ -226,6 +243,7 @@ class MountainFormRepository(
                     status = it.status,
                     targetRpe = it.targetRpe,
                     actualRpe = it.actualRpe,
+                    actualDurationSeconds = it.actualDurationSeconds,
                     notes = it.completionNotes,
                 )
             },
@@ -260,6 +278,10 @@ class MountainFormRepository(
                     pain = it.pain,
                     painNote = it.painNote,
                     elapsedSeconds = it.elapsedSeconds,
+                    timingStatus = it.timingStatus,
+                    plannedRestSeconds = it.plannedRestSeconds,
+                    actualRestSeconds = it.actualRestSeconds,
+                    restSkipped = it.restSkipped,
                 )
             },
             activities = dao.getImportedActivities().filter {
@@ -409,8 +431,45 @@ class MountainFormRepository(
             plan = plan,
             added = plan.sessions.count { it.id !in existing },
             updated = plan.sessions.count { it.id in existing && existing.getValue(it.id).status == SessionStatus.PLANNED },
+            preservedHistory = plan.sessions.count { it.id in existing && existing.getValue(it.id).status != SessionStatus.PLANNED },
             conflicts = conflicts,
+            changes = plan.sessions.mapNotNull { planned ->
+                val old = existing[planned.id]
+                if (old != null && old.status != SessionStatus.PLANNED) return@mapNotNull null
+                PlanSessionChange(
+                    before = old?.let(::sessionSummary),
+                    after = PlanSessionSummary(
+                        plannedEpochDay = planned.plannedEpochDay,
+                        title = planned.title,
+                        durationMinutes = planned.durationMinutes,
+                        targetRpe = planned.targetRpe,
+                        exercises = planned.steps.map(::exerciseSummary),
+                    ),
+                )
+            },
         )
+    }
+
+    private fun sessionSummary(session: TrainingSessionEntity): PlanSessionSummary {
+        val steps = runCatching { json.decodeFromString<List<ExerciseStep>>(session.stepsJson) }.getOrDefault(emptyList())
+        return PlanSessionSummary(
+            plannedEpochDay = session.plannedEpochDay,
+            title = session.title,
+            durationMinutes = session.durationMinutes,
+            targetRpe = session.targetRpe,
+            exercises = steps.map(::exerciseSummary),
+        )
+    }
+
+    private fun exerciseSummary(step: ExerciseStep): String = buildString {
+        append(step.title)
+        append(" — ")
+        append(step.prescription)
+        when {
+            step.rounds > 1 -> append(" · ${step.rounds} круга")
+            step.sets > 1 -> append(" · ${step.sets} подхода")
+        }
+        step.workSeconds?.let { append(" · ${it / 60}:${(it % 60).toString().padStart(2, '0')}") }
     }
 
     suspend fun applyPlan(preview: ImportPreview) {
@@ -535,7 +594,25 @@ class MountainFormRepository(
         val firstTuesday = lastDate.plusDays(1).with(TemporalAdjusters.nextOrSame(DayOfWeek.TUESDAY))
         val profile = requireNotNull(dao.getProfile())
         val sessions = buildList {
-            repeat(4) { weekIndex ->
+            existing
+                .filter { it.status == SessionStatus.PLANNED }
+                .mapNotNull { current ->
+                    structuredLegacySteps(current)?.let { upgradedSteps ->
+                        PlanSession(
+                            id = current.id,
+                            plannedEpochDay = current.plannedEpochDay,
+                            title = current.title,
+                            type = current.type,
+                            phase = current.phase,
+                            objective = current.objective,
+                            durationMinutes = current.durationMinutes,
+                            targetRpe = current.targetRpe,
+                            steps = upgradedSteps,
+                        )
+                    }
+                }
+                .forEach(::add)
+            repeat(2) { weekIndex ->
                 val tuesday = firstTuesday.plusWeeks(weekIndex.toLong())
                 val friday = tuesday.with(TemporalAdjusters.next(DayOfWeek.FRIDAY))
                 val sunday = tuesday.with(TemporalAdjusters.next(DayOfWeek.SUNDAY))
@@ -640,11 +717,86 @@ class MountainFormRepository(
         val envelope = PlanEnvelope(
             planId = "base-block-${firstTuesday.toEpochDay()}",
             author = "Горная форма",
-            reason = "4-недельный базовый блок: сила, core, бег и длительная ходьба. Повышение нагрузки блокируется при боли или плохом самочувствии.",
+            reason = "Структура оставшихся встроенных тренировок и резерв на 14 дней: основные силовые упражнения отдельно, аксессуары и core по кругу. Это предложение применяется только после подтверждения; при боли или плохом самочувствии нагрузка блокируется.",
             generatedAtEpochMillis = System.currentTimeMillis(),
             sessions = sessions,
         )
         return previewPlan(json.encodeToString(envelope))
+    }
+
+    private fun structuredLegacySteps(session: TrainingSessionEntity): List<ExerciseStep>? {
+        val current = decodeSteps(session)
+        if (current.isEmpty() || current.any { it.blockId != "main" || it.blockType != WorkoutBlockType.STRAIGHT }) return null
+        return when {
+            session.id.startsWith("lower-core-") -> current.map { step ->
+                when (step.id) {
+                    "bike" -> step.copy(
+                        blockId = "warmup", blockTitle = "Разминка",
+                        blockType = WorkoutBlockType.AEROBIC, workSeconds = 600,
+                    )
+                    "box-squat" -> step.copy(
+                        restSeconds = 75, blockId = "squat", blockTitle = "Основная сила: присед",
+                        sets = 3, reps = 8,
+                    )
+                    "hinge" -> step.copy(
+                        restSeconds = 75, blockId = "hinge", blockTitle = "Основная сила: тяга",
+                        sets = 3, reps = 8,
+                    )
+                    "calf" -> step.copy(
+                        restSeconds = 15, blockId = "accessory", blockTitle = "Core и аксессуары",
+                        blockType = WorkoutBlockType.CIRCUIT, rounds = 3, reps = 12,
+                    )
+                    "core" -> step.copy(
+                        blockId = "accessory", blockTitle = "Core и аксессуары",
+                        blockType = WorkoutBlockType.CIRCUIT, rounds = 3, reps = 8, restAfterRoundSeconds = 60,
+                    )
+                    "cooldown" -> step.copy(
+                        blockId = "cooldown", blockTitle = "Заминка",
+                        blockType = WorkoutBlockType.AEROBIC, workSeconds = 480,
+                    )
+                    else -> step
+                }
+            }
+            session.id.startsWith("run-baseline-") -> current.map { step ->
+                when (step.id) {
+                    "walk-warmup" -> step.copy(
+                        blockId = "warmup", blockTitle = "Разминка",
+                        blockType = WorkoutBlockType.AEROBIC, workSeconds = 600,
+                    )
+                    "run-walk" -> step.copy(
+                        restSeconds = 120, blockId = "run", blockTitle = "Бег / ходьба",
+                        blockType = WorkoutBlockType.INTERVAL, sets = 6, workSeconds = 180,
+                    )
+                    "walk-cooldown" -> step.copy(
+                        blockId = "cooldown", blockTitle = "Заминка",
+                        blockType = WorkoutBlockType.AEROBIC, workSeconds = 300,
+                    )
+                    else -> step
+                }
+            }
+            session.id.startsWith("easy-aerobic-") -> current.map { step ->
+                when (step.id) {
+                    "warmup" -> step.copy(
+                        blockId = "warmup", blockTitle = "Разминка",
+                        blockType = WorkoutBlockType.AEROBIC, workSeconds = 600,
+                    )
+                    "aerobic" -> step.copy(
+                        blockId = "aerobic", blockTitle = "Аэробная работа",
+                        blockType = WorkoutBlockType.AEROBIC, workSeconds = 2400,
+                    )
+                    "bridge" -> step.copy(
+                        restSeconds = 15, blockId = "core", blockTitle = "Core по кругу",
+                        blockType = WorkoutBlockType.CIRCUIT, rounds = 3, reps = 10,
+                    )
+                    "side-core" -> step.copy(
+                        blockId = "core", blockTitle = "Core по кругу",
+                        blockType = WorkoutBlockType.CIRCUIT, rounds = 3, workSeconds = 20, restAfterRoundSeconds = 45,
+                    )
+                    else -> step
+                }
+            }
+            else -> null
+        }
     }
 
     private fun seedSessions(today: LocalDate): List<TrainingSessionEntity> {
@@ -692,10 +844,24 @@ class MountainFormRepository(
                 "Лёгкая аэробная работа", "AEROBIC", 65, 3,
                 "Оценить восстановление через неделю после похода",
                 listOf(
-                    ExerciseStep("warmup", "Разминка ходьбой", "10 минут", "Постепенно поднять пульс"),
-                    ExerciseStep("aerobic", "Ходьба или велотренажёр", "40 минут, разговорный темп", "Без боли в колене и плече"),
-                    ExerciseStep("bridge", "Ягодичный мост", "3 × 10", "Пауза 2 секунды в верхней точке"),
-                    ExerciseStep("side-core", "Боковая стабилизация без опоры на плечо", "3 × 20 секунд", "Выбрать вариант лёжа; прекратить при дискомфорте"),
+                    ExerciseStep(
+                        "warmup", "Разминка ходьбой", "10 минут", "Постепенно поднять пульс",
+                        blockId = "warmup", blockTitle = "Разминка", blockType = WorkoutBlockType.AEROBIC, workSeconds = 600,
+                    ),
+                    ExerciseStep(
+                        "aerobic", "Ходьба или велотренажёр", "40 минут, разговорный темп", "Без боли в колене и плече",
+                        blockId = "aerobic", blockTitle = "Аэробная работа", blockType = WorkoutBlockType.AEROBIC, workSeconds = 2400,
+                    ),
+                    ExerciseStep(
+                        "bridge", "Ягодичный мост", "3 × 10", "Пауза 2 секунды в верхней точке",
+                        restSeconds = 15, blockId = "core", blockTitle = "Core по кругу", blockType = WorkoutBlockType.CIRCUIT,
+                        rounds = 3, reps = 10,
+                    ),
+                    ExerciseStep(
+                        "side-core", "Боковая стабилизация без опоры на плечо", "3 × 20 секунд", "Выбрать вариант лёжа; прекратить при дискомфорте",
+                        blockId = "core", blockTitle = "Core по кругу", blockType = WorkoutBlockType.CIRCUIT,
+                        rounds = 3, workSeconds = 20, restAfterRoundSeconds = 45,
+                    ),
                 ),
             ),
             session(
@@ -703,12 +869,32 @@ class MountainFormRepository(
                 "Возвращение в зал: ноги и core", "STRENGTH", 70, 5,
                 "Спокойно вернуть силовой паттерн без отказных подходов",
                 listOf(
-                    ExerciseStep("bike", "Велотренажёр", "10 минут легко", "Разминка"),
-                    ExerciseStep("box-squat", "Присед до высокой опоры", "3 × 8, RPE 5", "Без боли; контролировать колено"),
-                    ExerciseStep("hinge", "Румынская тяга с лёгким весом", "3 × 8, RPE 5", "Ровная спина, медленное опускание"),
-                    ExerciseStep("calf", "Подъём на носки", "3 × 12", "Полный контролируемый диапазон"),
-                    ExerciseStep("core", "Антиразгибание лёжа", "3 × 8 на сторону", "Плечи расслаблены"),
-                    ExerciseStep("cooldown", "Заминка", "8 минут", "Без агрессивной растяжки плеча"),
+                    ExerciseStep(
+                        "bike", "Велотренажёр", "10 минут легко", "Разминка",
+                        blockId = "warmup", blockTitle = "Разминка", blockType = WorkoutBlockType.AEROBIC, workSeconds = 600,
+                    ),
+                    ExerciseStep(
+                        "box-squat", "Присед до высокой опоры", "3 × 8, RPE 5", "Без боли; контролировать колено",
+                        restSeconds = 75, blockId = "squat", blockTitle = "Основная сила: присед", sets = 3, reps = 8,
+                    ),
+                    ExerciseStep(
+                        "hinge", "Румынская тяга с лёгким весом", "3 × 8, RPE 5", "Ровная спина, медленное опускание",
+                        restSeconds = 75, blockId = "hinge", blockTitle = "Основная сила: тяга", sets = 3, reps = 8,
+                    ),
+                    ExerciseStep(
+                        "calf", "Подъём на носки", "3 × 12", "Полный контролируемый диапазон",
+                        restSeconds = 15, blockId = "accessory", blockTitle = "Core и аксессуары",
+                        blockType = WorkoutBlockType.CIRCUIT, rounds = 3, reps = 12,
+                    ),
+                    ExerciseStep(
+                        "core", "Антиразгибание лёжа", "3 × 8 на сторону", "Плечи расслаблены",
+                        blockId = "accessory", blockTitle = "Core и аксессуары",
+                        blockType = WorkoutBlockType.CIRCUIT, rounds = 3, reps = 8, restAfterRoundSeconds = 60,
+                    ),
+                    ExerciseStep(
+                        "cooldown", "Заминка", "8 минут", "Без агрессивной растяжки плеча",
+                        blockId = "cooldown", blockTitle = "Заминка", blockType = WorkoutBlockType.AEROBIC, workSeconds = 480,
+                    ),
                 ),
             ),
             session(
@@ -716,9 +902,19 @@ class MountainFormRepository(
                 "Беговая диагностика: легко и без цели по темпу", "RUN", 45, 4,
                 "Проверить переносимость ровного лёгкого бега",
                 listOf(
-                    ExerciseStep("walk-warmup", "Разминка ходьбой", "10 минут", "Ровная поверхность"),
-                    ExerciseStep("run-walk", "Лёгкий бег / ходьба", "6 × (3 минуты бег + 2 минуты ходьба)", "Разговорный темп; остановиться при боли"),
-                    ExerciseStep("walk-cooldown", "Заминка ходьбой", "5 минут", "Отметить ощущения в колене сразу и утром"),
+                    ExerciseStep(
+                        "walk-warmup", "Разминка ходьбой", "10 минут", "Ровная поверхность",
+                        blockId = "warmup", blockTitle = "Разминка", blockType = WorkoutBlockType.AEROBIC, workSeconds = 600,
+                    ),
+                    ExerciseStep(
+                        "run-walk", "Лёгкий бег / ходьба", "6 × (3 минуты бег + 2 минуты ходьба)", "Разговорный темп; остановиться при боли",
+                        restSeconds = 120, blockId = "run", blockTitle = "Бег / ходьба",
+                        blockType = WorkoutBlockType.INTERVAL, sets = 6, workSeconds = 180,
+                    ),
+                    ExerciseStep(
+                        "walk-cooldown", "Заминка ходьбой", "5 минут", "Отметить ощущения в колене сразу и утром",
+                        blockId = "cooldown", blockTitle = "Заминка", blockType = WorkoutBlockType.AEROBIC, workSeconds = 300,
+                    ),
                 ),
             ),
         ).sortedBy { it.plannedEpochDay }

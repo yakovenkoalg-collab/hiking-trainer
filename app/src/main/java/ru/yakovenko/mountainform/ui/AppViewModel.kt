@@ -29,9 +29,11 @@ import ru.yakovenko.mountainform.data.ReviewCheckpointEntity
 import ru.yakovenko.mountainform.data.ImportedActivityEntity
 import ru.yakovenko.mountainform.data.TrainingSessionEntity
 import ru.yakovenko.mountainform.data.UserProfileEntity
+import ru.yakovenko.mountainform.data.WorkoutExecutionStore
 import ru.yakovenko.mountainform.domain.ReadinessDecision
 import ru.yakovenko.mountainform.domain.ReadinessLevel
 import ru.yakovenko.mountainform.domain.TrainingSafety
+import ru.yakovenko.mountainform.domain.WorkoutExecutionState
 import ru.yakovenko.mountainform.health.HealthConnectManager
 import ru.yakovenko.mountainform.health.HealthSummary
 import ru.yakovenko.mountainform.health.FitActivityImporter
@@ -81,6 +83,7 @@ class AppViewModel(
     private val yandexDiskSyncManager: YandexDiskSyncManager,
     private val secureTokenStore: SecureTokenStore,
     private val fitActivityImporter: FitActivityImporter,
+    private val workoutExecutionStore: WorkoutExecutionStore,
 ) : ViewModel() {
     private val trainingState = combine(
         repository.profile,
@@ -303,18 +306,18 @@ class AppViewModel(
     fun connectYandex(token: String, rootPath: String) {
         viewModelScope.launch {
             runCatching { yandexDiskSyncManager.connect(token, rootPath) }
-                .onSuccess {
+                .onSuccess { accountLabel ->
                     val current = uiState.value.settings ?: AppSettingsEntity()
                     repository.updateSettings(
                         current.copy(
                             yandexSyncEnabled = true,
                             yandexRootPath = rootPath,
-                            yandexAccountLabel = "OAuth подключён",
-                            lastSyncMessage = it,
+                            yandexAccountLabel = accountLabel,
+                            lastSyncMessage = "Яндекс Диск подключён",
                         ),
                     )
                     yandexConnected.value = true
-                    message.value = it
+                    message.value = "Яндекс Диск подключён"
                 }
                 .onFailure { message.value = it.message ?: "Не удалось подключить Яндекс Диск" }
         }
@@ -329,6 +332,16 @@ class AppViewModel(
             message.value = "Яндекс Диск отключён; локальные данные сохранены"
         }
     }
+
+    fun reportYandexLoginMessage(value: String) {
+        message.value = value
+    }
+
+    fun loadWorkoutExecution(sessionId: String): WorkoutExecutionState? = workoutExecutionStore.load(sessionId)
+
+    fun saveWorkoutExecution(state: WorkoutExecutionState) = workoutExecutionStore.save(state)
+
+    fun clearWorkoutExecution(sessionId: String) = workoutExecutionStore.clear(sessionId)
 
     fun syncYandex() {
         val current = uiState.value.settings ?: AppSettingsEntity()
@@ -441,9 +454,9 @@ class AppViewModel(
         backupPreview.value = null
     }
 
-    fun completeSession(id: String, rpe: Int, notes: String) {
+    fun completeSession(id: String, rpe: Int, notes: String, actualDurationSeconds: Int) {
         viewModelScope.launch {
-            repository.completeSession(id, rpe, notes)
+            repository.completeSession(id, rpe, notes, actualDurationSeconds)
             message.value = "Тренировка завершена"
             automaticSyncIfEnabled()
         }
@@ -624,6 +637,7 @@ class AppViewModel(
         private val yandexDiskSyncManager: YandexDiskSyncManager,
         private val secureTokenStore: SecureTokenStore,
         private val fitActivityImporter: FitActivityImporter,
+        private val workoutExecutionStore: WorkoutExecutionStore,
     ) : ViewModelProvider.Factory {
         @Suppress("UNCHECKED_CAST")
         override fun <T : ViewModel> create(modelClass: Class<T>): T =
@@ -636,6 +650,7 @@ class AppViewModel(
                 yandexDiskSyncManager,
                 secureTokenStore,
                 fitActivityImporter,
+                workoutExecutionStore,
             ) as T
     }
 }

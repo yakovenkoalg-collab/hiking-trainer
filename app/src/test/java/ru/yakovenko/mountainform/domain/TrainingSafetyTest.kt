@@ -12,12 +12,29 @@ class TrainingSafetyTest {
 
     @Test
     fun illnessStopsProgression() {
-        assertEquals(ReadinessLevel.RED, TrainingSafety.evaluate(check(illness = true)).level)
+        val decision = TrainingSafety.evaluate(check(illness = true))
+
+        assertEquals(ReadinessLevel.RED, decision.level)
+        assertEquals(listOf("отмечены признаки болезни"), decision.reasons)
+    }
+
+    @Test
+    fun redDecisionExplainsEveryBlockingPainValue() {
+        val decision = TrainingSafety.evaluate(check(shoulderPain = 8, kneePain = 7))
+
+        assertEquals(ReadinessLevel.RED, decision.level)
+        assertEquals(
+            listOf("боль в левом плече 8/10", "боль в правом колене 7/10"),
+            decision.reasons,
+        )
     }
 
     @Test
     fun activeShoulderPainAdaptsSession() {
-        assertEquals(ReadinessLevel.YELLOW, TrainingSafety.evaluate(check(shoulderPain = 4)).level)
+        val decision = TrainingSafety.evaluate(check(shoulderPain = 4))
+
+        assertEquals(ReadinessLevel.YELLOW, decision.level)
+        assertEquals(listOf("боль в левом плече 4/10"), decision.reasons)
     }
 
     @Test

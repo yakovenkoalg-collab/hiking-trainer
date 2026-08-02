@@ -18,12 +18,11 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.ArrowForward
 import androidx.compose.material.icons.filled.EventRepeat
+import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.FitnessCenter
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
-import androidx.compose.material3.DatePicker
-import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -31,7 +30,6 @@ import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
-import androidx.compose.material3.rememberDatePickerState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -48,10 +46,8 @@ import ru.yakovenko.mountainform.data.TrainingSessionEntity
 import ru.yakovenko.mountainform.ui.AppUiState
 import ru.yakovenko.mountainform.ui.components.SectionTitle
 import ru.yakovenko.mountainform.ui.formatEpochDay
-import java.time.Instant
 import java.time.LocalDate
 import java.time.YearMonth
-import java.time.ZoneOffset
 import java.time.format.TextStyle
 import java.util.Locale
 
@@ -68,6 +64,9 @@ fun CalendarScreen(
     var sessionToMove by remember { mutableStateOf<TrainingSessionEntity?>(null) }
     val sessionsByDay = state.sessions.groupBy { it.plannedEpochDay }
     val selectedSessions = sessionsByDay[selectedDate.toEpochDay()].orEmpty()
+    val selectedCompleted = selectedSessions.count { it.status == SessionStatus.COMPLETED }
+    val selectedPlanned = selectedSessions.count { it.status == SessionStatus.PLANNED }
+    val selectedSkipped = selectedSessions.count { it.status == SessionStatus.SKIPPED }
     val futurePlanned = state.sessions.count {
         it.status == SessionStatus.PLANNED && it.plannedEpochDay >= LocalDate.now().toEpochDay()
     }
@@ -95,7 +94,15 @@ fun CalendarScreen(
             SectionTitle(
                 selectedDate.dayOfMonth.toString() + " " +
                     selectedDate.month.getDisplayName(TextStyle.FULL, Locale.forLanguageTag("ru")),
-                if (selectedSessions.isEmpty()) "Тренировок нет" else "${selectedSessions.size} запланировано",
+                if (selectedSessions.isEmpty()) {
+                    "Тренировок нет"
+                } else {
+                    buildList {
+                        if (selectedCompleted > 0) add("$selectedCompleted выполнено")
+                        if (selectedPlanned > 0) add("$selectedPlanned запланировано")
+                        if (selectedSkipped > 0) add("$selectedSkipped пропущено")
+                    }.joinToString(" · ")
+                },
             )
         }
         if (selectedSessions.isEmpty()) {
@@ -136,10 +143,10 @@ fun CalendarScreen(
                         Text("Резерв плана: $futurePlanned тренировок / ${bufferDays.coerceAtLeast(0)} дней", fontWeight = FontWeight.Bold)
                         Text(
                             "После контрольного отчёта предпочтителен персонально скорректированный JSON из нашего чата. " +
-                                "Если он ещё не готов, можно подготовить безопасный базовый блок; календарь изменится только после подтверждения.",
+                                "Если он ещё не готов, можно подготовить резерв на 14 дней; календарь изменится только после вашего подтверждения.",
                         )
                         Button(onClick = onProposeNextBlock, modifier = Modifier.fillMaxWidth()) {
-                            Text("Подготовить следующий блок")
+                            Text("Подготовить резерв на 14 дней")
                         }
                     }
                 }
@@ -259,9 +266,16 @@ private fun CalendarDay(
             )
             Row(horizontalArrangement = Arrangement.spacedBy(2.dp)) {
                 sessions.take(3).forEach { session ->
-                    Box(
-                        Modifier.size(6.dp).background(sessionColor(session), CircleShape),
-                    )
+                    if (session.status == SessionStatus.COMPLETED) {
+                        Icon(
+                            Icons.Default.CheckCircle,
+                            contentDescription = "Тренировка выполнена",
+                            tint = sessionColor(session),
+                            modifier = Modifier.size(11.dp),
+                        )
+                    } else {
+                        Box(Modifier.size(6.dp).background(sessionColor(session), CircleShape))
+                    }
                 }
             }
         }
@@ -280,7 +294,11 @@ private fun CalendarSessionCard(
             horizontalArrangement = Arrangement.spacedBy(12.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            Icon(Icons.Default.FitnessCenter, contentDescription = null, tint = sessionColor(session))
+            Icon(
+                if (session.status == SessionStatus.COMPLETED) Icons.Default.CheckCircle else Icons.Default.FitnessCenter,
+                contentDescription = if (session.status == SessionStatus.COMPLETED) "Выполнено" else null,
+                tint = sessionColor(session),
+            )
             Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
                 Text(session.title, fontWeight = FontWeight.Bold)
                 Text("${session.durationMinutes} мин · RPE ${session.targetRpe}")
@@ -313,22 +331,33 @@ private fun sessionColor(session: TrainingSessionEntity): Color = when {
 }
 
 @Composable
-@OptIn(ExperimentalMaterial3Api::class)
 private fun RescheduleDialog(
     session: TrainingSessionEntity,
     onDismiss: () -> Unit,
     onConfirm: (LocalDate, String) -> Unit,
 ) {
-    val initialMillis = session.plannedEpochDay * 86_400_000L
-    val pickerState = rememberDatePickerState(initialSelectedDateMillis = initialMillis)
+    var selectedDate by remember(session.id) { mutableStateOf(LocalDate.ofEpochDay(session.plannedEpochDay)) }
+    var selectedMonth by remember(session.id) { mutableStateOf(YearMonth.from(selectedDate)) }
     var reason by remember { mutableStateOf("") }
     AlertDialog(
         onDismissRequest = onDismiss,
         title = { Text("Перенести тренировку") },
         text = {
-            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
                 Text(session.title)
-                DatePicker(state = pickerState, showModeToggle = false)
+                MonthCalendar(
+                    month = selectedMonth,
+                    selectedDate = selectedDate,
+                    sessionsByDay = emptyMap(),
+                    onPreviousMonth = { selectedMonth = selectedMonth.minusMonths(1) },
+                    onNextMonth = { selectedMonth = selectedMonth.plusMonths(1) },
+                    onSelectDate = { selectedDate = it },
+                )
+                Text(
+                    "Новая дата: ${formatEpochDay(selectedDate.toEpochDay())}",
+                    style = MaterialTheme.typography.bodyMedium,
+                    fontWeight = FontWeight.SemiBold,
+                )
                 OutlinedTextField(
                     value = reason,
                     onValueChange = { reason = it },
@@ -339,13 +368,7 @@ private fun RescheduleDialog(
         },
         confirmButton = {
             Button(
-                enabled = pickerState.selectedDateMillis != null,
-                onClick = {
-                    val date = Instant.ofEpochMilli(requireNotNull(pickerState.selectedDateMillis))
-                        .atZone(ZoneOffset.UTC)
-                        .toLocalDate()
-                    onConfirm(date, reason.ifBlank { "Перенос пользователем" })
-                },
+                onClick = { onConfirm(selectedDate, reason.ifBlank { "Перенос пользователем" }) },
             ) { Text("Перенести") }
         },
         dismissButton = { TextButton(onClick = onDismiss) { Text("Отмена") } },

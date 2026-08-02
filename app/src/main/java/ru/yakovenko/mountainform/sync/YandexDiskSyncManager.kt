@@ -23,7 +23,7 @@ class YandexDiskSyncManager(
         tokenStore.save(token)
         runCatching {
             ensureLayout(rootPath, token)
-            "Яндекс Диск подключён"
+            accountLabel(token)
         }.getOrElse {
             tokenStore.clear()
             throw it
@@ -79,8 +79,9 @@ class YandexDiskSyncManager(
 
     private fun ensureLayout(rootPath: String, token: String) {
         val root = normalizedRoot(rootPath)
-        val segments = root.removePrefix("disk:/").split('/').filter { it.isNotBlank() }
-        var current = "disk:"
+        val scheme = if (root.startsWith("app:")) "app:" else "disk:"
+        val segments = root.removePrefix("$scheme/").removePrefix(scheme).split('/').filter { it.isNotBlank() }
+        var current = scheme
         segments.forEach { segment ->
             current += "/$segment"
             createDirectory(current, token)
@@ -166,7 +167,7 @@ class YandexDiskSyncManager(
                 connection.outputStream.use { it.write(body) }
             }
             val code = connection.responseCode
-            val stream = if (code in allowedCodes) connection.inputStream else connection.errorStream
+            val stream = yandexResponseStream(connection, code)
             val response = stream?.bufferedReader()?.use { it.readText() }.orEmpty()
             if (code !in allowedCodes) {
                 val description = runCatching {
@@ -182,10 +183,19 @@ class YandexDiskSyncManager(
 
     private fun requireToken(): String = tokenStore.load() ?: error("Сначала подключите Яндекс Диск")
 
+    private fun accountLabel(token: String): String = runCatching {
+        val response = absoluteRequest("GET", ACCOUNT_INFO_API, token, null, setOf(200))
+        val account = json.parseToJsonElement(response).jsonObject
+        account["display_name"]?.jsonPrimitive?.contentOrNull
+            ?: account["login"]?.jsonPrimitive?.contentOrNull
+            ?: "Яндекс ID"
+    }.getOrDefault("Яндекс ID")
+
     private fun normalizedRoot(path: String): String = path.trim().trimEnd('/').let {
         when {
-            it.isBlank() -> "disk:/Горная форма"
-            it.startsWith("disk:/") -> it
+            it.isBlank() -> "app:"
+            it == "app:" || it.startsWith("app:/") -> it
+            it == "disk:" || it.startsWith("disk:/") -> it
             else -> "disk:/${it.trimStart('/')}"
         }
     }
@@ -196,5 +206,9 @@ class YandexDiskSyncManager(
 
     private companion object {
         const val API = "https://cloud-api.yandex.net/v1/disk"
+        const val ACCOUNT_INFO_API = "https://login.yandex.ru/info?format=json"
     }
 }
+
+internal fun yandexResponseStream(connection: HttpURLConnection, responseCode: Int) =
+    if (responseCode >= 400) connection.errorStream else connection.inputStream

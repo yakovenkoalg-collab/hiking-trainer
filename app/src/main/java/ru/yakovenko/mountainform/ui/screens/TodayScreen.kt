@@ -26,6 +26,7 @@ import androidx.compose.material3.Slider
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableIntStateOf
@@ -51,10 +52,19 @@ fun TodayScreen(
     onOpenSession: (String) -> Unit,
     onCompleteCorePractice: () -> Unit,
     onShareReviewReport: () -> Unit,
+    openReadiness: Boolean = false,
+    onReadinessOpened: () -> Unit = {},
 ) {
     var showCheck by remember { mutableStateOf(false) }
     val decision = state.readinessDecision
     val session = state.nextSession
+
+    LaunchedEffect(openReadiness) {
+        if (openReadiness) {
+            showCheck = true
+            onReadinessOpened()
+        }
+    }
 
     LazyColumn(
         modifier = Modifier.fillMaxSize().padding(padding),
@@ -90,6 +100,13 @@ fun TodayScreen(
                         fontWeight = FontWeight.Bold,
                     )
                     ReadinessPill(decision.level, decision.title)
+                    if (decision.reasons.isNotEmpty()) {
+                        Text(
+                            "Учтено: ${decision.reasons.joinToString("; ")}",
+                            style = MaterialTheme.typography.bodyMedium,
+                            fontWeight = FontWeight.SemiBold,
+                        )
+                    }
                     Text(decision.recommendation, style = MaterialTheme.typography.bodyMedium)
                     OutlinedButton(onClick = { showCheck = true }, modifier = Modifier.fillMaxWidth()) {
                         Text(if (state.todayCheck == null) "Отметить состояние" else "Обновить состояние")
@@ -201,10 +218,10 @@ private fun ReadinessDialog(
         title = { Text("Состояние перед тренировкой") },
         text = {
             LazyColumn(verticalArrangement = Arrangement.spacedBy(14.dp)) {
-                item { RatingRow("Сон", sleep) { sleep = it } }
-                item { RatingRow("Энергия", energy) { energy = it } }
-                item { RatingRow("Усталость", fatigue) { fatigue = it } }
-                item { RatingRow("Мышечная болезненность", soreness) { soreness = it } }
+                item { RatingRow("Сон", sleep, "1 — очень плохо, 5 — отлично") { sleep = it } }
+                item { RatingRow("Энергия", energy, "1 — очень низкая, 5 — высокая") { energy = it } }
+                item { RatingRow("Усталость", fatigue, "1 — нет, 5 — сильная") { fatigue = it } }
+                item { RatingRow("Мышечная болезненность", soreness, "1 — нет, 5 — сильная") { soreness = it } }
                 item {
                     PainSlider("Левое плечо", shoulder) { shoulder = it }
                 }
@@ -238,9 +255,10 @@ private fun ReadinessDialog(
 }
 
 @Composable
-private fun RatingRow(label: String, value: Int, onChange: (Int) -> Unit) {
+private fun RatingRow(label: String, value: Int, hint: String, onChange: (Int) -> Unit) {
     Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
         Text("$label: $value", style = MaterialTheme.typography.labelLarge)
+        Text(hint, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
         Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
             (1..5).forEach { rating ->
                 FilterChip(
@@ -257,6 +275,7 @@ private fun RatingRow(label: String, value: Int, onChange: (Int) -> Unit) {
 private fun PainSlider(label: String, value: Float, onChange: (Float) -> Unit) {
     Column {
         Text("$label — боль ${value.toInt()}/10", style = MaterialTheme.typography.labelLarge)
+        Text("0 — нет боли, 10 — максимально сильная", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
         Slider(value = value, onValueChange = onChange, valueRange = 0f..10f, steps = 9)
     }
 }

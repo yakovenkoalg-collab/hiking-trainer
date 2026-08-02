@@ -255,7 +255,7 @@ interface MountainFormDao {
         ReviewCheckpointEntity::class,
         ImportedActivityEntity::class,
     ],
-    version = 3,
+    version = 4,
     exportSchema = true,
 )
 abstract class MountainFormDatabase : RoomDatabase() {
@@ -409,11 +409,22 @@ abstract class MountainFormDatabase : RoomDatabase() {
             }
         }
 
+        val MIGRATION_3_4 = object : Migration(3, 4) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE training_sessions ADD COLUMN actualDurationSeconds INTEGER NOT NULL DEFAULT 0")
+                db.execSQL("ALTER TABLE session_set_logs ADD COLUMN timingStatus TEXT NOT NULL DEFAULT 'NOT_USED'")
+                db.execSQL("ALTER TABLE session_set_logs ADD COLUMN plannedRestSeconds INTEGER NOT NULL DEFAULT 0")
+                db.execSQL("ALTER TABLE session_set_logs ADD COLUMN actualRestSeconds INTEGER")
+                db.execSQL("ALTER TABLE session_set_logs ADD COLUMN restSkipped INTEGER NOT NULL DEFAULT 0")
+                db.execSQL("UPDATE session_set_logs SET timingStatus = 'RECORDED' WHERE elapsedSeconds > 0")
+            }
+        }
+
         fun create(context: Context): MountainFormDatabase =
             Room.databaseBuilder(
                 context.applicationContext,
                 MountainFormDatabase::class.java,
                 "mountain-form.db",
-            ).addMigrations(MIGRATION_1_2, MIGRATION_2_3).build()
+            ).addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4).build()
     }
 }
