@@ -29,8 +29,15 @@ data class HealthSummary(
     val elevationMeters: Double = 0.0,
     val latestSleepHours: Double? = null,
     val averageHeartRate: Double? = null,
+    val dataOrigins: Set<String> = emptySet(),
+    val windowDays: Int = 30,
+    val refreshedAtEpochMillis: Long? = null,
     val error: String? = null,
-)
+) {
+    val hasAnyData: Boolean
+        get() = workouts > 0 || steps > 0 || distanceKm > 0.0 || elevationMeters > 0.0 ||
+            latestSleepHours != null || averageHeartRate != null
+}
 
 class HealthConnectManager(private val context: Context) {
     val permissions: Set<String> = setOf(
@@ -53,41 +60,48 @@ class HealthConnectManager(private val context: Context) {
         else -> HealthAvailability.UNAVAILABLE
     }
 
-    suspend fun readSummary(): HealthSummary {
+    suspend fun readSummary(windowDays: Int = 30): HealthSummary {
         if (availability() != HealthAvailability.AVAILABLE) {
-            return HealthSummary(error = "Health Connect недоступен")
+            return HealthSummary(windowDays = windowDays, error = "Health Connect недоступен")
         }
         return runCatching {
             val client = HealthConnectClient.getOrCreate(context)
             val granted = client.permissionController.getGrantedPermissions()
             if (!granted.containsAll(permissions)) {
-                return HealthSummary(available = true, permissionsGranted = false)
+                return HealthSummary(
+                    available = true,
+                    permissionsGranted = false,
+                    windowDays = windowDays,
+                    refreshedAtEpochMillis = System.currentTimeMillis(),
+                )
             }
             val end = Instant.now()
-            val start = end.minus(7, ChronoUnit.DAYS)
+            val start = end.minus(windowDays.coerceIn(7, 90).toLong(), ChronoUnit.DAYS)
             val range = TimeRangeFilter.between(start, end)
-            val workouts = client.readRecords(
+            val workoutRecords = client.readRecords(
                 ReadRecordsRequest(
                     recordType = ExerciseSessionRecord::class,
                     timeRangeFilter = range,
                 ),
-            ).records.size
-            val sleep = client.readRecords(
+            ).records
+            val sleepRecords = client.readRecords(
                 ReadRecordsRequest(
                     recordType = SleepSessionRecord::class,
                     timeRangeFilter = range,
                     ascendingOrder = false,
                     pageSize = 1,
                 ),
-            ).records.firstOrNull()
-            val heartRates = client.readRecords(
+            ).records
+            val sleep = sleepRecords.firstOrNull()
+            val heartRateRecords = client.readRecords(
                 ReadRecordsRequest(
                     recordType = HeartRateRecord::class,
                     timeRangeFilter = range,
                     ascendingOrder = false,
                     pageSize = 50,
                 ),
-            ).records.flatMap { it.samples }.map { it.beatsPerMinute }
+            ).records
+            val heartRates = heartRateRecords.flatMap { it.samples }.map { it.beatsPerMinute }
             val aggregate = client.aggregate(
                 AggregateRequest(
                     metrics = setOf(
@@ -101,7 +115,7 @@ class HealthConnectManager(private val context: Context) {
             HealthSummary(
                 available = true,
                 permissionsGranted = true,
-                workouts = workouts,
+                workouts = workoutRecords.size,
                 steps = aggregate[StepsRecord.COUNT_TOTAL] ?: 0,
                 distanceKm = aggregate[DistanceRecord.DISTANCE_TOTAL]?.inKilometers ?: 0.0,
                 elevationMeters = aggregate[ElevationGainedRecord.ELEVATION_GAINED_TOTAL]?.inMeters ?: 0.0,
@@ -109,9 +123,21 @@ class HealthConnectManager(private val context: Context) {
                     Duration.between(it.startTime, it.endTime).toMinutes() / 60.0
                 },
                 averageHeartRate = heartRates.takeIf { it.isNotEmpty() }?.average(),
+                dataOrigins = buildSet {
+                    workoutRecords.forEach { add(it.metadata.dataOrigin.packageName) }
+                    sleepRecords.forEach { add(it.metadata.dataOrigin.packageName) }
+                    heartRateRecords.forEach { add(it.metadata.dataOrigin.packageName) }
+                },
+                windowDays = windowDays,
+                refreshedAtEpochMillis = System.currentTimeMillis(),
             )
         }.getOrElse { error ->
-            HealthSummary(available = true, error = error.message ?: "Не удалось прочитать Health Connect")
+            HealthSummary(
+                available = true,
+                windowDays = windowDays,
+                refreshedAtEpochMillis = System.currentTimeMillis(),
+                error = error.message ?: "Не удалось прочитать Health Connect",
+            )
         }
     }
 }

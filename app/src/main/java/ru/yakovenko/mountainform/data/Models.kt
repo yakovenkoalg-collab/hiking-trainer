@@ -1,9 +1,11 @@
 package ru.yakovenko.mountainform.data
 
+import androidx.room.ColumnInfo
 import androidx.room.Entity
 import androidx.room.PrimaryKey
 import kotlinx.serialization.Serializable
 
+@Serializable
 @Entity(tableName = "user_profile")
 data class UserProfileEntity(
     @PrimaryKey val id: Int = 1,
@@ -17,6 +19,7 @@ data class UserProfileEntity(
     val updatedAtEpochMillis: Long,
 )
 
+@Serializable
 @Entity(tableName = "goal_events")
 data class GoalEventEntity(
     @PrimaryKey val id: String,
@@ -29,6 +32,7 @@ data class GoalEventEntity(
     val notes: String,
 )
 
+@Serializable
 @Entity(tableName = "training_sessions")
 data class TrainingSessionEntity(
     @PrimaryKey val id: String,
@@ -45,8 +49,11 @@ data class TrainingSessionEntity(
     val actualRpe: Int? = null,
     val completionNotes: String = "",
     val planVersion: Int = 1,
+    @ColumnInfo(defaultValue = "0") val originalEpochDay: Long = plannedEpochDay,
+    @ColumnInfo(defaultValue = "''") val rescheduleReason: String = "",
 )
 
+@Serializable
 @Entity(tableName = "readiness_checks")
 data class ReadinessCheckEntity(
     @PrimaryKey val epochDay: Long,
@@ -61,6 +68,7 @@ data class ReadinessCheckEntity(
     val createdAtEpochMillis: Long,
 )
 
+@Serializable
 @Entity(tableName = "body_metrics")
 data class BodyMetricEntity(
     @PrimaryKey val epochDay: Long,
@@ -73,6 +81,7 @@ data class BodyMetricEntity(
     val notes: String,
 )
 
+@Serializable
 @Entity(tableName = "plan_revisions")
 data class PlanRevisionEntity(
     @PrimaryKey val id: String,
@@ -84,6 +93,7 @@ data class PlanRevisionEntity(
     val applied: Boolean,
 )
 
+@Serializable
 @Entity(tableName = "practice_logs")
 data class PracticeLogEntity(
     @PrimaryKey val id: String,
@@ -91,6 +101,70 @@ data class PracticeLogEntity(
     val type: String,
     val minutes: Int,
     val notes: String,
+)
+
+@Serializable
+@Entity(tableName = "exercise_catalog")
+data class ExerciseCatalogEntity(
+    @PrimaryKey val id: String,
+    val title: String,
+    val category: String,
+    val summary: String,
+    val setup: String,
+    val execution: String,
+    val breathing: String,
+    val commonMistakesJson: String,
+    val restrictionTagsJson: String,
+    val illustrationKey: String,
+    val frameCount: Int,
+)
+
+@Serializable
+@Entity(tableName = "app_settings")
+data class AppSettingsEntity(
+    @PrimaryKey val id: Int = 1,
+    val sharedFolderUri: String? = null,
+    val sharedFolderName: String? = null,
+    val automaticSync: Boolean = false,
+    val lastSyncAtEpochMillis: Long? = null,
+    val lastSyncMessage: String = "Общая папка не выбрана",
+    val remindersEnabled: Boolean = false,
+    val reminderHour: Int = 19,
+    val reminderMinute: Int = 0,
+    val healthWindowDays: Int = 30,
+)
+
+@Serializable
+@Entity(tableName = "reschedule_events")
+data class RescheduleEventEntity(
+    @PrimaryKey val id: String,
+    val sessionId: String,
+    val fromEpochDay: Long,
+    val toEpochDay: Long,
+    val reason: String,
+    val createdAtEpochMillis: Long,
+)
+
+@Serializable
+@Entity(tableName = "session_step_logs", primaryKeys = ["sessionId", "stepId"])
+data class SessionStepLogEntity(
+    val sessionId: String,
+    val stepId: String,
+    val completed: Boolean,
+    val updatedAtEpochMillis: Long,
+)
+
+@Serializable
+@Entity(tableName = "posture_assessments")
+data class PostureAssessmentEntity(
+    @PrimaryKey val id: String,
+    val epochDay: Long,
+    val frontPhotoUri: String? = null,
+    val sidePhotoUri: String? = null,
+    val backPhotoUri: String? = null,
+    val selfRating: Int,
+    val notes: String,
+    val createdAtEpochMillis: Long,
 )
 
 @Serializable
@@ -102,6 +176,8 @@ data class ExerciseStep(
     val restSeconds: Int = 0,
     val required: Boolean = true,
     val restrictionTags: List<String> = emptyList(),
+    val exerciseId: String = "",
+    val illustrationKey: String = "",
 )
 
 @Serializable

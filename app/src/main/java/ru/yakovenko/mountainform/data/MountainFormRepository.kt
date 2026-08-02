@@ -29,6 +29,11 @@ class MountainFormRepository(
     val readiness: Flow<List<ReadinessCheckEntity>> = dao.observeReadiness()
     val bodyMetrics: Flow<List<BodyMetricEntity>> = dao.observeBodyMetrics()
     val practices: Flow<List<PracticeLogEntity>> = dao.observePractices()
+    val exerciseCatalog: Flow<List<ExerciseCatalogEntity>> = dao.observeExerciseCatalog()
+    val settings: Flow<AppSettingsEntity?> = dao.observeSettings()
+    val rescheduleEvents: Flow<List<RescheduleEventEntity>> = dao.observeRescheduleEvents()
+    val postureAssessments: Flow<List<PostureAssessmentEntity>> = dao.observePostureAssessments()
+    val stepLogs: Flow<List<SessionStepLogEntity>> = dao.observeStepLogs()
 
     suspend fun initialize() {
         val now = System.currentTimeMillis()
@@ -73,11 +78,64 @@ class MountainFormRepository(
         if (dao.sessionCount() == 0) {
             dao.upsertSessions(seedSessions(LocalDate.now()))
         }
+        if (dao.getSettings() == null) {
+            dao.upsertSettings(AppSettingsEntity())
+        }
+        if (dao.getExerciseCatalog().isEmpty()) {
+            dao.upsertExerciseCatalog(seedExerciseCatalog(json))
+        }
     }
 
     suspend fun saveReadiness(check: ReadinessCheckEntity) = dao.upsertReadiness(check)
 
     suspend fun saveBodyMetric(metric: BodyMetricEntity) = dao.upsertBodyMetric(metric)
+
+    suspend fun updateProfile(profile: UserProfileEntity) =
+        dao.upsertProfile(profile.copy(updatedAtEpochMillis = System.currentTimeMillis()))
+
+    suspend fun updateGoal(goal: GoalEventEntity) = dao.upsertGoal(goal)
+
+    suspend fun updateSettings(settings: AppSettingsEntity) = dao.upsertSettings(settings)
+
+    suspend fun savePostureAssessment(assessment: PostureAssessmentEntity) =
+        dao.upsertPostureAssessment(assessment)
+
+    suspend fun setStepCompleted(sessionId: String, stepId: String, completed: Boolean) {
+        dao.upsertStepLog(
+            SessionStepLogEntity(
+                sessionId = sessionId,
+                stepId = stepId,
+                completed = completed,
+                updatedAtEpochMillis = System.currentTimeMillis(),
+            ),
+        )
+    }
+
+    fun observeStepLogs(sessionId: String): Flow<List<SessionStepLogEntity>> =
+        dao.observeStepLogs(sessionId)
+
+    suspend fun rescheduleSession(id: String, newEpochDay: Long, reason: String) {
+        val session = dao.getSession(id) ?: return
+        require(session.status == SessionStatus.PLANNED) { "Переносить можно только запланированную тренировку" }
+        require(newEpochDay != session.plannedEpochDay) { "Выберите другую дату" }
+        val now = System.currentTimeMillis()
+        dao.rescheduleSession(
+            session = session.copy(
+                plannedEpochDay = newEpochDay,
+                originalEpochDay = session.originalEpochDay.takeIf { it != 0L } ?: session.plannedEpochDay,
+                rescheduleReason = reason.trim(),
+                planVersion = session.planVersion + 1,
+            ),
+            event = RescheduleEventEntity(
+                id = UUID.randomUUID().toString(),
+                sessionId = id,
+                fromEpochDay = session.plannedEpochDay,
+                toEpochDay = newEpochDay,
+                reason = reason.trim(),
+                createdAtEpochMillis = now,
+            ),
+        )
+    }
 
     suspend fun completeCorePractice(notes: String = "") {
         val epochDay = LocalDate.now().toEpochDay()
@@ -169,6 +227,89 @@ class MountainFormRepository(
         return json.encodeToString(report)
     }
 
+    suspend fun exportBackup(): String {
+        val settings = dao.getSettings() ?: AppSettingsEntity()
+        val backup = BackupEnvelope(
+            generatedAtEpochMillis = System.currentTimeMillis(),
+            profile = requireNotNull(dao.getProfile()),
+            goals = dao.getGoals(),
+            sessions = dao.getSessions(),
+            readiness = dao.getReadiness(),
+            bodyMetrics = dao.getBodyMetrics(),
+            revisions = dao.getRevisions(),
+            practices = dao.getPractices(),
+            rescheduleEvents = dao.getRescheduleEvents(),
+            stepLogs = dao.getStepLogs(),
+            postureAssessments = dao.getPostureAssessments().map {
+                it.copy(frontPhotoUri = null, sidePhotoUri = null, backPhotoUri = null)
+            },
+            preferences = settings.copy(
+                sharedFolderUri = null,
+                sharedFolderName = null,
+                lastSyncAtEpochMillis = null,
+                lastSyncMessage = "Общая папка не выбрана",
+            ),
+        )
+        return json.encodeToString(backup)
+    }
+
+    suspend fun previewBackup(rawJson: String): BackupPreview {
+        val backup = json.decodeFromString<BackupEnvelope>(rawJson)
+        require(backup.schemaVersion == 1) { "Неподдерживаемая версия резервной копии" }
+        val existing = dao.getSessions().associateBy { it.id }
+        return BackupPreview(
+            backup = backup,
+            newSessions = backup.sessions.count { it.id !in existing },
+            restoredHistory = backup.sessions.count {
+                it.status != SessionStatus.PLANNED && existing[it.id]?.status == SessionStatus.PLANNED
+            },
+            preservedLocalHistory = backup.sessions.count {
+                existing[it.id]?.status != null && existing.getValue(it.id).status != SessionStatus.PLANNED
+            },
+            readinessRecords = backup.readiness.size,
+            bodyMetricRecords = backup.bodyMetrics.size,
+        )
+    }
+
+    suspend fun applyBackup(preview: BackupPreview) {
+        val backup = preview.backup
+        val currentSessions = dao.getSessions().associateBy { it.id }
+        val sessions = backup.sessions.mapNotNull { restored ->
+            val current = currentSessions[restored.id]
+            when {
+                current == null -> restored
+                current.status != SessionStatus.PLANNED -> null
+                else -> restored
+            }
+        }
+        val readinessKeys = dao.getReadiness().mapTo(mutableSetOf()) { it.epochDay }
+        val bodyKeys = dao.getBodyMetrics().mapTo(mutableSetOf()) { it.epochDay }
+        val revisionKeys = dao.getRevisions().mapTo(mutableSetOf()) { it.id }
+        val practiceKeys = dao.getPractices().mapTo(mutableSetOf()) { it.id }
+        val rescheduleKeys = dao.getRescheduleEvents().mapTo(mutableSetOf()) { it.id }
+        val stepKeys = dao.getStepLogs().mapTo(mutableSetOf()) { it.sessionId to it.stepId }
+        val postureKeys = dao.getPostureAssessments().mapTo(mutableSetOf()) { it.id }
+        val currentSettings = dao.getSettings() ?: AppSettingsEntity()
+        dao.mergeBackup(
+            profile = backup.profile,
+            goals = backup.goals,
+            sessions = sessions,
+            readiness = backup.readiness.filter { it.epochDay !in readinessKeys },
+            bodyMetrics = backup.bodyMetrics.filter { it.epochDay !in bodyKeys },
+            revisions = backup.revisions.filter { it.id !in revisionKeys },
+            practices = backup.practices.filter { it.id !in practiceKeys },
+            rescheduleEvents = backup.rescheduleEvents.filter { it.id !in rescheduleKeys },
+            stepLogs = backup.stepLogs.filter { (it.sessionId to it.stepId) !in stepKeys },
+            postureAssessments = backup.postureAssessments.filter { it.id !in postureKeys },
+            settings = backup.preferences.copy(
+                sharedFolderUri = currentSettings.sharedFolderUri,
+                sharedFolderName = currentSettings.sharedFolderName,
+                lastSyncAtEpochMillis = currentSettings.lastSyncAtEpochMillis,
+                lastSyncMessage = currentSettings.lastSyncMessage,
+            ),
+        )
+    }
+
     suspend fun previewPlan(rawJson: String): ImportPreview {
         val plan = json.decodeFromString<PlanEnvelope>(rawJson)
         require(plan.schemaVersion == 1) { "Неподдерживаемая версия схемы: ${plan.schemaVersion}" }
@@ -207,6 +348,8 @@ class MountainFormRepository(
                 targetRpe = planned.targetRpe,
                 stepsJson = json.encodeToString(planned.steps),
                 planVersion = (old?.planVersion ?: 0) + 1,
+                originalEpochDay = old?.originalEpochDay?.takeIf { it != 0L } ?: planned.plannedEpochDay,
+                rescheduleReason = old?.rescheduleReason.orEmpty(),
             )
         }
         dao.upsertSessions(sessionsToApply)
@@ -221,6 +364,87 @@ class MountainFormRepository(
                 applied = true,
             ),
         )
+    }
+
+    suspend fun proposeNextBaseBlock(today: LocalDate = LocalDate.now()): ImportPreview {
+        val existing = dao.getSessions()
+        val lastDate = existing.maxOfOrNull { LocalDate.ofEpochDay(it.plannedEpochDay) } ?: today
+        val firstTuesday = lastDate.plusDays(1).with(TemporalAdjusters.nextOrSame(DayOfWeek.TUESDAY))
+        val profile = requireNotNull(dao.getProfile())
+        val sessions = buildList {
+            repeat(4) { weekIndex ->
+                val tuesday = firstTuesday.plusWeeks(weekIndex.toLong())
+                val friday = tuesday.with(TemporalAdjusters.next(DayOfWeek.FRIDAY))
+                val sunday = tuesday.with(TemporalAdjusters.next(DayOfWeek.SUNDAY))
+                val deload = weekIndex == 3
+                val strengthRpe = if (deload) 4 else 5
+                val longMinutes = listOf(75, 85, 95, 70)[weekIndex]
+                add(
+                    PlanSession(
+                        id = "base-strength-${tuesday.toEpochDay()}",
+                        plannedEpochDay = tuesday.toEpochDay(),
+                        title = if (deload) "Облегчённая силовая + core" else "Ноги, задняя цепь и core",
+                        type = "STRENGTH",
+                        phase = "База для гор и бега",
+                        objective = "Сохранять силу ног и стабильность без отказа и без нагрузки на плечо",
+                        durationMinutes = if (deload) 60 else 75,
+                        targetRpe = strengthRpe,
+                        steps = listOf(
+                            ExerciseStep("bike", "Велотренажёр", "10 минут легко", "Постепенная разминка"),
+                            ExerciseStep("box-squat", "Присед до высокой опоры", if (deload) "2 × 8, RPE 4" else "3 × 8, RPE 5", "Колено по линии стопы", restSeconds = 75),
+                            ExerciseStep("hinge", "Румынская тяга с лёгким весом", if (deload) "2 × 8, RPE 4" else "3 × 8, RPE 5", "Вес близко к ногам, плечо без боли", restSeconds = 75),
+                            ExerciseStep("calf", "Подъём на носки", if (deload) "2 × 12" else "3 × 12", "Медленное опускание", restSeconds = 45),
+                            ExerciseStep("core", "Антиразгибание лёжа", if (deload) "2 × 6 на сторону" else "3 × 8 на сторону", "Рёбра и таз неподвижны", restSeconds = 45),
+                        ),
+                    ),
+                )
+                add(
+                    PlanSession(
+                        id = "base-run-${friday.toEpochDay()}",
+                        plannedEpochDay = friday.toEpochDay(),
+                        title = if (deload) "Лёгкий бег в разговорном темпе" else "Бег / ходьба: базовые интервалы",
+                        type = "RUN",
+                        phase = "База для гор и бега",
+                        objective = "Постепенно создавать беговую базу для полумарафона",
+                        durationMinutes = listOf(50, 55, 60, 45)[weekIndex],
+                        targetRpe = if (deload) 3 else 4,
+                        steps = listOf(
+                            ExerciseStep("walk-warmup", "Разминка ходьбой", "10 минут", "Ровная поверхность"),
+                            ExerciseStep("run-walk", "Лёгкий бег / ходьба", if (deload) "25 минут легко" else "${5 + weekIndex} × (4 мин бег + 1 мин ходьба)", "Разговорный темп; остановиться при боли"),
+                            ExerciseStep("walk-cooldown", "Заминка ходьбой", "5–10 минут", "Отметить ощущения сразу и утром"),
+                        ),
+                    ),
+                )
+                add(
+                    PlanSession(
+                        id = "base-endurance-${sunday.toEpochDay()}",
+                        plannedEpochDay = sunday.toEpochDay(),
+                        title = if (deload) "Восстановительная длинная ходьба" else "Длинная ходьба с уклоном",
+                        type = "AEROBIC",
+                        phase = "База для гор и бега",
+                        objective = if (profile.shoulderRestrictionActive) {
+                            "Длительная работа без рюкзака, пока активно ограничение плеча"
+                        } else {
+                            "Длительная работа для гор; рюкзак не добавлять без отдельного решения"
+                        },
+                        durationMinutes = longMinutes,
+                        targetRpe = if (deload) 3 else 4,
+                        steps = listOf(
+                            ExerciseStep("walk", "Ходьба или дорожка с уклоном", "$longMinutes минут, RPE ${if (deload) 3 else 4}", "Ровно, без тяжёлого рюкзака и без длинных спусков"),
+                            ExerciseStep("breathing", "Дыхание и контроль рёбер", "3 × 5 циклов", "Длинный спокойный выдох"),
+                        ),
+                    ),
+                )
+            }
+        }
+        val envelope = PlanEnvelope(
+            planId = "base-block-${firstTuesday.toEpochDay()}",
+            author = "Горная форма",
+            reason = "4-недельный базовый блок: сила, core, бег и длительная ходьба. Повышение нагрузки блокируется при боли или плохом самочувствии.",
+            generatedAtEpochMillis = System.currentTimeMillis(),
+            sessions = sessions,
+        )
+        return previewPlan(json.encodeToString(envelope))
     }
 
     private fun seedSessions(today: LocalDate): List<TrainingSessionEntity> {

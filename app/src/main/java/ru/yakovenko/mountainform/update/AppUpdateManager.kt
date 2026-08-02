@@ -39,7 +39,9 @@ class AppUpdateManager(private val context: Context) {
         val connection = URL(BuildConfig.UPDATE_MANIFEST_URL).openConnection() as HttpURLConnection
         connection.connectTimeout = 10_000
         connection.readTimeout = 10_000
+        connection.useCaches = false
         connection.setRequestProperty("Accept", "application/json")
+        connection.setRequestProperty("Cache-Control", "no-cache")
         try {
             require(connection.responseCode in 200..299) { "HTTP ${connection.responseCode}" }
             val manifest = connection.inputStream.bufferedReader().use { json.decodeFromString<ReleaseManifest>(it.readText()) }

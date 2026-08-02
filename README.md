@@ -21,9 +21,12 @@
 ```bash
 ./gradlew testDebugUnitTest
 ./gradlew assembleDebug
+./gradlew connectedDebugAndroidTest
 ```
 
 Debug APK появится в `app/build/outputs/apk/debug/app-debug.apk`.
+
+После первичной подготовки локальные JDK и Android SDK находятся в `.tooling/`. Полная проверка запускается через `scripts/verify.sh`, а оконный эмулятор — через `scripts/start-emulator.sh`.
 
 ## Документация
 
@@ -33,8 +36,10 @@ Debug APK появится в `app/build/outputs/apk/debug/app-debug.apk`.
 - [Границы безопасности](docs/SAFETY.md)
 - [Использование данных здоровья](docs/PRIVACY.md)
 
-## Текущая версия 0.1.0
+## Текущая версия 0.2.0
 
-Реализованы профиль, стартовый восстановительный план, беговая цель на весну 2027, readiness-check, выполнение тренировок, core/осанка, метрики тела, Health Connect, недельная сводка, импорт/экспорт плана и механизм обновления APK.
+Реализованы календарь с переносами, пошаговый режим тренировки, локальный каталог с иллюстрациями упражнений, профиль и беговая цель, readiness-check, core/осанка с локальными фото, метрики тела, диагностика Health Connect, общая облачная папка через Android SAF, резервные копии, предпросмотр нового 4-недельного блока, напоминания и механизм обновления APK.
 
-Для тестовой установки используется `app/build/outputs/apk/debug/app-debug.apk`. Production APK должен быть подписан постоянным личным ключом. URL канала обновлений передаётся при сборке через `-PupdateManifestUrl=https://…/latest.json`.
+Локальный ARM64-эмулятор хранится в игнорируемой `.tooling/`; AVD называется `MountainFormApi35`.
+
+Для тестовой установки и обновления текущей 0.1 используется тот же debug-ключ. Перед публичным выпуском нужен отдельный постоянный release-ключ. Release APK по умолчанию проверяет `https://yakovenkoalg-collab.github.io/hiking-trainer/latest.json`; другой канал можно передать при сборке через `-PupdateManifestUrl=https://…/latest.json`.

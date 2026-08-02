@@ -15,12 +15,13 @@ android {
         applicationId = "ru.yakovenko.mountainform"
         minSdk = 28
         targetSdk = 36
-        versionCode = 1
-        versionName = "0.1.0"
+        versionCode = 2
+        versionName = "0.2.0"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         vectorDrawables.useSupportLibrary = true
-        val updateManifestUrl = providers.gradleProperty("updateManifestUrl").orNull.orEmpty()
+        val updateManifestUrl = providers.gradleProperty("updateManifestUrl")
+            .getOrElse("https://yakovenkoalg-collab.github.io/hiking-trainer/latest.json")
         buildConfigField("String", "UPDATE_MANIFEST_URL", "\"$updateManifestUrl\"")
     }
 
@@ -28,6 +29,9 @@ android {
         release {
             isMinifyEnabled = true
             isShrinkResources = true
+            // Личный APK должен обновить уже установленную debug-сборку 0.1,
+            // поэтому до публичного релиза оба варианта используют один локальный ключ.
+            signingConfig = signingConfigs.getByName("debug")
             proguardFiles(
                 getDefaultProguardFile("proguard-android-optimize.txt"),
                 "proguard-rules.pro",
@@ -52,6 +56,8 @@ android {
     lint {
         disable += setOf("AndroidGradlePluginVersion", "GradleDependency", "NewerVersionAvailable", "ObsoleteSdkInt")
     }
+
+    sourceSets.getByName("androidTest").assets.srcDir("$projectDir/schemas")
 }
 
 kotlin {
@@ -85,6 +91,7 @@ dependencies {
     implementation(libs.androidx.datastore)
     implementation(libs.androidx.work.runtime)
     implementation(libs.androidx.health.connect)
+    implementation(libs.androidx.documentfile)
     implementation(libs.kotlinx.serialization.json)
 
     testImplementation(libs.junit)
@@ -93,5 +100,6 @@ dependencies {
     androidTestImplementation(libs.androidx.test.espresso)
     androidTestImplementation(platform(libs.androidx.compose.bom))
     androidTestImplementation(libs.androidx.compose.ui.test.junit4)
+    androidTestImplementation(libs.androidx.room.testing)
     debugImplementation(libs.androidx.compose.ui.test.manifest)
 }
