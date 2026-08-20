@@ -153,13 +153,13 @@ fun HealthSettingsScreen(
             item { SectionTitle("Дополнительный импорт FIT") }
             item {
                 OutlinedButton(
-                    onClick = { fitPicker.launch(arrayOf("application/octet-stream", "application/vnd.ant.fit", "*/*")) },
+                    onClick = { fitPicker.launch(arrayOf("application/octet-stream", "application/vnd.ant.fit", "application/zip", "*/*")) },
                     modifier = Modifier.fillMaxWidth(),
-                ) { Text("Импортировать файл .FIT") }
+                ) { Text("Импортировать .FIT или .ZIP") }
             }
             item {
                 Text(
-                    "FIT нужен, если Health Connect не передал набор высоты, пульс, мощность или каденс. Повторный импорт не создаёт дубликат.",
+                    "FIT нужен, если Health Connect не передал Training Effect, нагрузку, круги, зоны или беговую динамику. Можно выбрать один .FIT либо ZIP-архив Garmin; повторный импорт не создаёт дубликат.",
                     style = MaterialTheme.typography.bodySmall,
                 )
             }

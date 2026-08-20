@@ -532,8 +532,8 @@ class AppViewModel(
             message.value = "После отметки боли новый блок не формируется автоматически — сначала разберите контрольный отчёт"
             return
         }
-        if (uiState.value.readinessDecision.level != ReadinessLevel.GREEN) {
-            message.value = "Перед новым блоком отметьте хорошее самочувствие; при боли нагрузку не увеличиваем"
+        if (uiState.value.readinessDecision.level == ReadinessLevel.RED) {
+            message.value = "При красном статусе новый блок не формируется; сначала разберите симптомы и состояние"
             return
         }
         viewModelScope.launch {

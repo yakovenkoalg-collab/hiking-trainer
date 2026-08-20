@@ -19,6 +19,7 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
@@ -30,7 +31,9 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import kotlinx.serialization.json.Json
 import ru.yakovenko.mountainform.data.ActivityLinkStatus
+import ru.yakovenko.mountainform.data.ActivityLapSummary
 import ru.yakovenko.mountainform.data.ImportedActivityEntity
 import ru.yakovenko.mountainform.data.TrainingSessionEntity
 import ru.yakovenko.mountainform.ui.formatEpochDay
@@ -39,6 +42,7 @@ import java.time.Instant
 import java.time.ZoneId
 import java.time.format.DateTimeFormatter
 import kotlin.math.abs
+import kotlin.math.roundToLong
 
 @Composable
 @OptIn(ExperimentalMaterial3Api::class)
@@ -124,21 +128,41 @@ private fun ActivityCard(
     onUnlink: () -> Unit,
     onIgnore: () -> Unit,
 ) {
+    var detailsVisible by remember(activity.id) { mutableStateOf(false) }
+    val zoneSeconds = remember(activity.timeInHeartRateZonesJson) {
+        decodeMetricList<Double>(activity.timeInHeartRateZonesJson)
+    }
+    val laps = remember(activity.lapsJson) { decodeMetricList<ActivityLapSummary>(activity.lapsJson) }
     Card {
         Column(Modifier.fillMaxWidth().padding(16.dp), verticalArrangement = Arrangement.spacedBy(7.dp)) {
             Text(activity.title, fontWeight = FontWeight.Bold)
-            Text("${activity.activityType} · ${formatActivityTime(activity.startAtEpochMillis)} · ${activity.durationSeconds / 60} мин")
+            Text("${activity.activityType} · ${formatActivityTime(activity.startAtEpochMillis)} · ${formatActivityDuration(activity.durationSeconds)}")
             Text(
                 buildString {
-                    activity.distanceMeters?.let { append("${(it / 1000).oneDecimal()} км  ") }
+                    activity.distanceMeters?.let { append("${formatDistance(it)} км  ") }
+                    formatPace(activity.durationSeconds, activity.distanceMeters)?.let { append("$it/км  ") }
                     activity.elevationMeters?.let { append("+${it.toInt()} м  ") }
-                    activity.averageHeartRate?.let { append("ср. пульс ${it.toInt()}  ") }
-                    activity.maxHeartRate?.let { append("макс. ${it.toInt()}  ") }
-                    activity.averageCadence?.let { append("каденс ${it.toInt()}  ") }
-                    activity.averagePowerWatts?.let { append("${it.toInt()} Вт") }
+                    activity.descentMeters?.let { append("−${it.toInt()} м") }
                 }.ifBlank { "Основные метрики отсутствуют в источнике" },
                 style = MaterialTheme.typography.bodySmall,
             )
+            Text(
+                buildString {
+                    activity.averageHeartRate?.let { append("пульс ${it.toInt()}") }
+                    activity.maxHeartRate?.let { append(" / ${it.toInt()}  ") }
+                    activity.averageCadence?.let { append("каденс ${it.toInt()} шаг/мин  ") }
+                    activity.averagePowerWatts?.let { append("${it.toInt()} Вт") }
+                }.trim().ifBlank { "Пульс, каденс и мощность не переданы источником" },
+                style = MaterialTheme.typography.bodySmall,
+            )
+            if (activity.aerobicTrainingEffect != null || activity.trainingLoad != null || laps.isNotEmpty()) {
+                TextButton(onClick = { detailsVisible = !detailsVisible }) {
+                    Text(if (detailsVisible) "Скрыть показатели" else "Показать показатели Garmin")
+                }
+            }
+            if (detailsVisible) {
+                ActivityDetails(activity, zoneSeconds, laps)
+            }
             if (linkedSession != null) {
                 Text("Связано: ${linkedSession.title}", color = MaterialTheme.colorScheme.primary)
                 TextButton(onClick = onUnlink) { Text("Убрать связь") }
@@ -154,6 +178,96 @@ private fun ActivityCard(
     }
 }
 
+@Composable
+private fun ActivityDetails(
+    activity: ImportedActivityEntity,
+    zoneSeconds: List<Double>,
+    laps: List<ActivityLapSummary>,
+) {
+    HorizontalDivider()
+    activity.aerobicTrainingEffect?.let { aerobic ->
+        Text(
+            buildString {
+                append("Training Effect: аэробный ${aerobic.oneDecimal()}")
+                activity.anaerobicTrainingEffect?.let { append(" · анаэробный ${it.oneDecimal()}") }
+                activity.trainingLoad?.let { append(" · нагрузка ${it.toInt()}") }
+            },
+            style = MaterialTheme.typography.bodySmall,
+        )
+    }
+    if (zoneSeconds.any { it > 0.0 }) {
+        val includesBelowZoneOne = zoneSeconds.size >= 6
+        Text(
+            zoneSeconds.mapIndexedNotNull { index, seconds ->
+                seconds.takeIf { it > 0.0 }?.let {
+                    val label = if (includesBelowZoneOne && index == 0) "ниже Z1" else "Z${index + if (includesBelowZoneOne) 0 else 1}"
+                    "$label ${formatActivityDuration(it.roundToLong())}"
+                }
+            }.joinToString(" · ", prefix = "Пульсовые зоны: "),
+            style = MaterialTheme.typography.bodySmall,
+        )
+    }
+    if (activity.configuredMaxHeartRate != null || activity.thresholdHeartRate != null) {
+        Text(
+            buildString {
+                activity.configuredMaxHeartRate?.let { append("Макс. пульс в Garmin ${it.toInt()}") }
+                activity.configuredRestingHeartRate?.let { append(" · покой ${it.toInt()}") }
+                activity.thresholdHeartRate?.let { append(" · порог ${it.toInt()}") }
+            },
+            style = MaterialTheme.typography.bodySmall,
+        )
+    }
+    if (
+        activity.averageStepLengthMm != null || activity.averageGroundContactTimeMs != null ||
+        activity.averageVerticalOscillationMm != null || activity.averageVerticalRatioPercent != null
+    ) {
+        Text(
+            buildString {
+                activity.averageStepLengthMm?.let { append("шаг ${twoDecimals(it / 1000)} м  ") }
+                activity.averageGroundContactTimeMs?.let { append("контакт ${it.toInt()} мс  ") }
+                activity.averageVerticalOscillationMm?.let { append("верт. колебания ${it.oneDecimal()} мм  ") }
+                activity.averageVerticalRatioPercent?.let { append("верт. отношение ${it.oneDecimal()}%") }
+            }.trim().replaceFirstChar { it.uppercase() },
+            style = MaterialTheme.typography.bodySmall,
+        )
+    }
+    if (laps.isNotEmpty()) {
+        Text("Отрезки", fontWeight = FontWeight.Bold, style = MaterialTheme.typography.bodySmall)
+        laps.forEach { lap ->
+            Text(
+                buildString {
+                    append("${lap.index}. ")
+                    lap.distanceMeters?.let { append("${formatDistance(it)} км") }
+                    formatPace(lap.durationSeconds, lap.distanceMeters)?.let { append(" · $it/км") }
+                    lap.averageHeartRate?.let { append(" · пульс ${it.toInt()}") }
+                    lap.averageCadence?.let { append(" · ${it.toInt()} шаг/мин") }
+                },
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        }
+    }
+}
+
 private fun formatActivityTime(epochMillis: Long): String = Instant.ofEpochMilli(epochMillis)
     .atZone(ZoneId.systemDefault())
     .format(DateTimeFormatter.ofPattern("dd.MM HH:mm"))
+
+private fun formatActivityDuration(seconds: Long): String = when {
+    seconds >= 3600 -> "%d:%02d:%02d".format(seconds / 3600, (seconds % 3600) / 60, seconds % 60)
+    else -> "%d:%02d".format(seconds / 60, seconds % 60)
+}
+
+private fun formatPace(durationSeconds: Long, distanceMeters: Double?): String? {
+    if (distanceMeters == null || distanceMeters < 100.0) return null
+    val secondsPerKm = (durationSeconds * 1000.0 / distanceMeters).toLong()
+    return "%d:%02d".format(secondsPerKm / 60, secondsPerKm % 60)
+}
+
+private fun formatDistance(distanceMeters: Double): String =
+    if (distanceMeters < 100.0) twoDecimals(distanceMeters / 1000.0) else (distanceMeters / 1000.0).oneDecimal()
+
+private fun twoDecimals(value: Double): String = String.format(java.util.Locale.US, "%.2f", value)
+
+private inline fun <reified T> decodeMetricList(rawJson: String): List<T> =
+    runCatching { Json.decodeFromString<List<T>>(rawJson) }.getOrDefault(emptyList())

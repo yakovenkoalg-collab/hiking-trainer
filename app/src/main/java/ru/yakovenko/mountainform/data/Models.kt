@@ -229,15 +229,42 @@ data class ImportedActivityEntity(
     val durationSeconds: Long,
     val distanceMeters: Double? = null,
     val elevationMeters: Double? = null,
+    val descentMeters: Double? = null,
     val caloriesKcal: Double? = null,
     val averageHeartRate: Double? = null,
     val maxHeartRate: Double? = null,
     val averageCadence: Double? = null,
     val averagePowerWatts: Double? = null,
+    val aerobicTrainingEffect: Double? = null,
+    val anaerobicTrainingEffect: Double? = null,
+    val trainingLoad: Double? = null,
+    val configuredMaxHeartRate: Double? = null,
+    val configuredRestingHeartRate: Double? = null,
+    val thresholdHeartRate: Double? = null,
+    @ColumnInfo(defaultValue = "'[]'") val heartRateZoneBoundariesJson: String = "[]",
+    @ColumnInfo(defaultValue = "'[]'") val timeInHeartRateZonesJson: String = "[]",
+    val averageVerticalOscillationMm: Double? = null,
+    val averageVerticalRatioPercent: Double? = null,
+    val averageGroundContactTimeMs: Double? = null,
+    val averageStepLengthMm: Double? = null,
+    @ColumnInfo(defaultValue = "'[]'") val lapsJson: String = "[]",
     val linkedSessionId: String? = null,
     val status: String = ActivityLinkStatus.UNLINKED,
     val importedAtEpochMillis: Long,
     val rawFileName: String? = null,
+)
+
+@Serializable
+data class ActivityLapSummary(
+    val index: Int,
+    val durationSeconds: Long,
+    val distanceMeters: Double? = null,
+    val ascentMeters: Double? = null,
+    val descentMeters: Double? = null,
+    val averageHeartRate: Double? = null,
+    val maxHeartRate: Double? = null,
+    val averageCadence: Double? = null,
+    val averagePowerWatts: Double? = null,
 )
 
 @Serializable
@@ -268,6 +295,8 @@ data class PlanEnvelope(
     val author: String,
     val reason: String,
     val generatedAtEpochMillis: Long,
+    val replacePlannedFromEpochDay: Long? = null,
+    val replacePlannedThroughEpochDay: Long? = null,
     val sessions: List<PlanSession>,
 )
 
@@ -286,7 +315,7 @@ data class PlanSession(
 
 @Serializable
 data class ReportEnvelope(
-    val schemaVersion: Int = 3,
+    val schemaVersion: Int = 4,
     val generatedAtEpochMillis: Long,
     val periodStartEpochDay: Long,
     val periodEndEpochDay: Long,
@@ -379,8 +408,25 @@ data class ReportActivity(
     val durationSeconds: Long,
     val distanceMeters: Double?,
     val elevationMeters: Double?,
+    val descentMeters: Double? = null,
+    val caloriesKcal: Double? = null,
     val averageHeartRate: Double?,
     val maxHeartRate: Double?,
+    val averageCadence: Double? = null,
+    val averagePowerWatts: Double? = null,
+    val aerobicTrainingEffect: Double? = null,
+    val anaerobicTrainingEffect: Double? = null,
+    val trainingLoad: Double? = null,
+    val configuredMaxHeartRate: Double? = null,
+    val configuredRestingHeartRate: Double? = null,
+    val thresholdHeartRate: Double? = null,
+    val heartRateZoneBoundaries: List<Double> = emptyList(),
+    val timeInHeartRateZonesSeconds: List<Double> = emptyList(),
+    val averageVerticalOscillationMm: Double? = null,
+    val averageVerticalRatioPercent: Double? = null,
+    val averageGroundContactTimeMs: Double? = null,
+    val averageStepLengthMm: Double? = null,
+    val laps: List<ActivityLapSummary> = emptyList(),
     val linkedSessionId: String?,
 )
 

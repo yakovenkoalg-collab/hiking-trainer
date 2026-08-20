@@ -200,6 +200,45 @@ interface MountainFormDao {
     @Upsert
     suspend fun upsertImportedActivities(activities: List<ImportedActivityEntity>)
 
+    @Query(
+        "DELETE FROM session_step_logs WHERE sessionId IN " +
+            "(SELECT id FROM training_sessions WHERE id IN (:ids) AND status = 'PLANNED')",
+    )
+    suspend fun deleteStepLogsForPlannedSessions(ids: List<String>)
+
+    @Query(
+        "DELETE FROM session_set_logs WHERE sessionId IN " +
+            "(SELECT id FROM training_sessions WHERE id IN (:ids) AND status = 'PLANNED')",
+    )
+    suspend fun deleteSetLogsForPlannedSessions(ids: List<String>)
+
+    @Query(
+        "UPDATE imported_activities SET linkedSessionId = NULL, status = 'UNLINKED' WHERE linkedSessionId IN " +
+            "(SELECT id FROM training_sessions WHERE id IN (:ids) AND status = 'PLANNED')",
+    )
+    suspend fun unlinkActivitiesFromPlannedSessions(ids: List<String>)
+
+    @Query("DELETE FROM training_sessions WHERE id IN (:ids) AND status = 'PLANNED'")
+    suspend fun deletePlannedSessions(ids: List<String>)
+
+    @Transaction
+    suspend fun applyPlanChanges(
+        sessions: List<TrainingSessionEntity>,
+        removedPlannedSessionIds: List<String>,
+        revision: PlanRevisionEntity,
+        resolvedCheckpoint: ReviewCheckpointEntity?,
+    ) {
+        if (removedPlannedSessionIds.isNotEmpty()) {
+            deleteStepLogsForPlannedSessions(removedPlannedSessionIds)
+            deleteSetLogsForPlannedSessions(removedPlannedSessionIds)
+            unlinkActivitiesFromPlannedSessions(removedPlannedSessionIds)
+            deletePlannedSessions(removedPlannedSessionIds)
+        }
+        upsertSessions(sessions)
+        upsertRevision(revision)
+        resolvedCheckpoint?.let { upsertReviewCheckpoint(it) }
+    }
+
     @Transaction
     suspend fun mergeBackup(
         profile: UserProfileEntity,
@@ -255,7 +294,7 @@ interface MountainFormDao {
         ReviewCheckpointEntity::class,
         ImportedActivityEntity::class,
     ],
-    version = 4,
+    version = 5,
     exportSchema = true,
 )
 abstract class MountainFormDatabase : RoomDatabase() {
@@ -420,11 +459,30 @@ abstract class MountainFormDatabase : RoomDatabase() {
             }
         }
 
+        val MIGRATION_4_5 = object : Migration(4, 5) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE imported_activities ADD COLUMN descentMeters REAL")
+                db.execSQL("ALTER TABLE imported_activities ADD COLUMN aerobicTrainingEffect REAL")
+                db.execSQL("ALTER TABLE imported_activities ADD COLUMN anaerobicTrainingEffect REAL")
+                db.execSQL("ALTER TABLE imported_activities ADD COLUMN trainingLoad REAL")
+                db.execSQL("ALTER TABLE imported_activities ADD COLUMN configuredMaxHeartRate REAL")
+                db.execSQL("ALTER TABLE imported_activities ADD COLUMN configuredRestingHeartRate REAL")
+                db.execSQL("ALTER TABLE imported_activities ADD COLUMN thresholdHeartRate REAL")
+                db.execSQL("ALTER TABLE imported_activities ADD COLUMN heartRateZoneBoundariesJson TEXT NOT NULL DEFAULT '[]'")
+                db.execSQL("ALTER TABLE imported_activities ADD COLUMN timeInHeartRateZonesJson TEXT NOT NULL DEFAULT '[]'")
+                db.execSQL("ALTER TABLE imported_activities ADD COLUMN averageVerticalOscillationMm REAL")
+                db.execSQL("ALTER TABLE imported_activities ADD COLUMN averageVerticalRatioPercent REAL")
+                db.execSQL("ALTER TABLE imported_activities ADD COLUMN averageGroundContactTimeMs REAL")
+                db.execSQL("ALTER TABLE imported_activities ADD COLUMN averageStepLengthMm REAL")
+                db.execSQL("ALTER TABLE imported_activities ADD COLUMN lapsJson TEXT NOT NULL DEFAULT '[]'")
+            }
+        }
+
         fun create(context: Context): MountainFormDatabase =
             Room.databaseBuilder(
                 context.applicationContext,
                 MountainFormDatabase::class.java,
                 "mountain-form.db",
-            ).addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4).build()
+            ).addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5).build()
     }
 }

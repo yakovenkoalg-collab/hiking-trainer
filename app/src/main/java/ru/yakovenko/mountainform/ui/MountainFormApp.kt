@@ -315,7 +315,7 @@ fun MountainFormApp(
                         Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
                             Text("Автор: ${preview.plan.author}", fontWeight = FontWeight.SemiBold)
                             Text(preview.plan.reason)
-                            Text("Добавится: ${preview.added} · изменится: ${preview.updated}")
+                            Text("Добавится: ${preview.added} · изменится: ${preview.updated} · заменится: ${preview.removed}")
                             if (preview.preservedHistory > 0) {
                                 Text("История сохранена без изменений: ${preview.preservedHistory}")
                             }
@@ -326,7 +326,9 @@ fun MountainFormApp(
                         items(preview.conflicts.size) { index -> Text("• ${preview.conflicts[index]}") }
                     }
                     if (preview.changes.isEmpty()) {
-                        item { Text("Применимых изменений нет: существующая история останется без изменений.") }
+                        if (preview.removedSessions.isEmpty()) {
+                            item { Text("Применимых изменений нет: существующая история останется без изменений.") }
+                        }
                     }
                     items(preview.changes.size) { index ->
                         val change = preview.changes[index]
@@ -348,11 +350,24 @@ fun MountainFormApp(
                             }
                         }
                     }
+                    items(preview.removedSessions.size) { index ->
+                        Card {
+                            Column(
+                                Modifier.fillMaxWidth().padding(12.dp),
+                                verticalArrangement = Arrangement.spacedBy(8.dp),
+                            ) {
+                                Text("Заменится в будущем плане", fontWeight = FontWeight.Bold)
+                                Text("Было", fontWeight = FontWeight.SemiBold)
+                                PlanSummary(preview.removedSessions[index])
+                                Text("Выполненная история не затрагивается.")
+                            }
+                        }
+                    }
                 }
             },
             confirmButton = {
                 TextButton(
-                    enabled = preview.conflicts.isEmpty() && preview.changes.isNotEmpty(),
+                    enabled = preview.conflicts.isEmpty() && (preview.changes.isNotEmpty() || preview.removedSessions.isNotEmpty()),
                     onClick = viewModel::applyImport,
                 ) { Text("Применить") }
             },

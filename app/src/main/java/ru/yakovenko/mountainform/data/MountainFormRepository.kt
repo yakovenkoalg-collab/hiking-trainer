@@ -3,6 +3,7 @@ package ru.yakovenko.mountainform.data
 import kotlinx.coroutines.flow.Flow
 import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
+import ru.yakovenko.mountainform.domain.AgreedHybridPlan
 import java.time.DayOfWeek
 import java.time.LocalDate
 import java.time.temporal.TemporalAdjusters
@@ -12,9 +13,12 @@ data class ImportPreview(
     val plan: PlanEnvelope,
     val added: Int,
     val updated: Int,
+    val removed: Int,
     val preservedHistory: Int,
     val conflicts: List<String>,
     val changes: List<PlanSessionChange>,
+    val removedSessions: List<PlanSessionSummary>,
+    val removedSessionIds: List<String>,
 )
 
 data class PlanSessionChange(
@@ -297,8 +301,25 @@ class MountainFormRepository(
                     durationSeconds = it.durationSeconds,
                     distanceMeters = it.distanceMeters,
                     elevationMeters = it.elevationMeters,
+                    descentMeters = it.descentMeters,
+                    caloriesKcal = it.caloriesKcal,
                     averageHeartRate = it.averageHeartRate,
                     maxHeartRate = it.maxHeartRate,
+                    averageCadence = it.averageCadence,
+                    averagePowerWatts = it.averagePowerWatts,
+                    aerobicTrainingEffect = it.aerobicTrainingEffect,
+                    anaerobicTrainingEffect = it.anaerobicTrainingEffect,
+                    trainingLoad = it.trainingLoad,
+                    configuredMaxHeartRate = it.configuredMaxHeartRate,
+                    configuredRestingHeartRate = it.configuredRestingHeartRate,
+                    thresholdHeartRate = it.thresholdHeartRate,
+                    heartRateZoneBoundaries = decodeList(it.heartRateZoneBoundariesJson),
+                    timeInHeartRateZonesSeconds = decodeList(it.timeInHeartRateZonesJson),
+                    averageVerticalOscillationMm = it.averageVerticalOscillationMm,
+                    averageVerticalRatioPercent = it.averageVerticalRatioPercent,
+                    averageGroundContactTimeMs = it.averageGroundContactTimeMs,
+                    averageStepLengthMm = it.averageStepLengthMm,
+                    laps = decodeList(it.lapsJson),
                     linkedSessionId = it.linkedSessionId,
                 )
             },
@@ -345,7 +366,7 @@ class MountainFormRepository(
 
     suspend fun previewBackup(rawJson: String): BackupPreview {
         val backup = json.decodeFromString<BackupEnvelope>(rawJson)
-        require(backup.schemaVersion in 1..2) { "Неподдерживаемая версия резервной копии" }
+        require(backup.schemaVersion in 1..3) { "Неподдерживаемая версия резервной копии" }
         val existing = dao.getSessions().associateBy { it.id }
         return BackupPreview(
             backup = backup,
@@ -413,7 +434,27 @@ class MountainFormRepository(
         val plan = json.decodeFromString<PlanEnvelope>(rawJson)
         require(plan.schemaVersion == 1) { "Неподдерживаемая версия схемы: ${plan.schemaVersion}" }
         require(plan.sessions.isNotEmpty()) { "План не содержит тренировок" }
+        require(
+            (plan.replacePlannedFromEpochDay == null) == (plan.replacePlannedThroughEpochDay == null),
+        ) { "Диапазон замены будущего плана задан не полностью" }
+        if (plan.replacePlannedFromEpochDay != null && plan.replacePlannedThroughEpochDay != null) {
+            require(plan.replacePlannedFromEpochDay <= plan.replacePlannedThroughEpochDay) {
+                "Некорректный диапазон замены будущего плана"
+            }
+        }
         val existing = dao.getSessions().associateBy { it.id }
+        val incomingIds = plan.sessions.mapTo(mutableSetOf()) { it.id }
+        val removedPlanned = if (
+            plan.replacePlannedFromEpochDay != null && plan.replacePlannedThroughEpochDay != null
+        ) {
+            existing.values.filter {
+                it.status == SessionStatus.PLANNED &&
+                    it.plannedEpochDay in plan.replacePlannedFromEpochDay..plan.replacePlannedThroughEpochDay &&
+                    it.id !in incomingIds
+            }.sortedBy { it.plannedEpochDay }
+        } else {
+            emptyList()
+        }
         val profile = requireNotNull(dao.getProfile())
         val conflicts = plan.sessions.flatMap { session ->
             session.steps.mapNotNull { step ->
@@ -431,6 +472,7 @@ class MountainFormRepository(
             plan = plan,
             added = plan.sessions.count { it.id !in existing },
             updated = plan.sessions.count { it.id in existing && existing.getValue(it.id).status == SessionStatus.PLANNED },
+            removed = removedPlanned.size,
             preservedHistory = plan.sessions.count { it.id in existing && existing.getValue(it.id).status != SessionStatus.PLANNED },
             conflicts = conflicts,
             changes = plan.sessions.mapNotNull { planned ->
@@ -447,6 +489,8 @@ class MountainFormRepository(
                     ),
                 )
             },
+            removedSessions = removedPlanned.map(::sessionSummary),
+            removedSessionIds = removedPlanned.map { it.id },
         )
     }
 
@@ -493,23 +537,25 @@ class MountainFormRepository(
                 rescheduleReason = old?.rescheduleReason.orEmpty(),
             )
         }
-        dao.upsertSessions(sessionsToApply)
-        dao.upsertRevision(
-            PlanRevisionEntity(
-                id = preview.plan.planId,
-                importedAtEpochMillis = System.currentTimeMillis(),
-                schemaVersion = preview.plan.schemaVersion,
-                author = preview.plan.author,
-                reason = preview.plan.reason,
-                payloadJson = json.encodeToString(preview.plan),
-                applied = true,
-            ),
+        val revision = PlanRevisionEntity(
+            id = preview.plan.planId,
+            importedAtEpochMillis = System.currentTimeMillis(),
+            schemaVersion = preview.plan.schemaVersion,
+            author = preview.plan.author,
+            reason = preview.plan.reason,
+            payloadJson = json.encodeToString(preview.plan),
+            applied = true,
         )
-        dao.getReviewCheckpoints().firstOrNull { it.status != ReviewStatus.RESOLVED }?.let {
-            dao.upsertReviewCheckpoint(
-                it.copy(status = ReviewStatus.RESOLVED, resolvedAtEpochMillis = System.currentTimeMillis()),
-            )
-        }
+        val resolvedCheckpoint = dao.getReviewCheckpoints().firstOrNull { it.status != ReviewStatus.RESOLVED }?.copy(
+            status = ReviewStatus.RESOLVED,
+            resolvedAtEpochMillis = System.currentTimeMillis(),
+        )
+        dao.applyPlanChanges(
+            sessions = sessionsToApply,
+            removedPlannedSessionIds = preview.removedSessionIds,
+            revision = revision,
+            resolvedCheckpoint = resolvedCheckpoint,
+        )
     }
 
     suspend fun upsertImportedActivities(activities: List<ImportedActivityEntity>) {
@@ -539,11 +585,27 @@ class MountainFormRepository(
                     activityType = primary.activityType.takeIf { it.isNotBlank() } ?: secondary.activityType,
                     distanceMeters = primary.distanceMeters ?: secondary.distanceMeters,
                     elevationMeters = primary.elevationMeters ?: secondary.elevationMeters,
+                    descentMeters = primary.descentMeters ?: secondary.descentMeters,
                     caloriesKcal = primary.caloriesKcal ?: secondary.caloriesKcal,
                     averageHeartRate = primary.averageHeartRate ?: secondary.averageHeartRate,
                     maxHeartRate = primary.maxHeartRate ?: secondary.maxHeartRate,
                     averageCadence = primary.averageCadence ?: secondary.averageCadence,
                     averagePowerWatts = primary.averagePowerWatts ?: secondary.averagePowerWatts,
+                    aerobicTrainingEffect = primary.aerobicTrainingEffect ?: secondary.aerobicTrainingEffect,
+                    anaerobicTrainingEffect = primary.anaerobicTrainingEffect ?: secondary.anaerobicTrainingEffect,
+                    trainingLoad = primary.trainingLoad ?: secondary.trainingLoad,
+                    configuredMaxHeartRate = primary.configuredMaxHeartRate ?: secondary.configuredMaxHeartRate,
+                    configuredRestingHeartRate = primary.configuredRestingHeartRate ?: secondary.configuredRestingHeartRate,
+                    thresholdHeartRate = primary.thresholdHeartRate ?: secondary.thresholdHeartRate,
+                    heartRateZoneBoundariesJson = primary.heartRateZoneBoundariesJson.takeUnless { it == "[]" }
+                        ?: secondary.heartRateZoneBoundariesJson,
+                    timeInHeartRateZonesJson = primary.timeInHeartRateZonesJson.takeUnless { it == "[]" }
+                        ?: secondary.timeInHeartRateZonesJson,
+                    averageVerticalOscillationMm = primary.averageVerticalOscillationMm ?: secondary.averageVerticalOscillationMm,
+                    averageVerticalRatioPercent = primary.averageVerticalRatioPercent ?: secondary.averageVerticalRatioPercent,
+                    averageGroundContactTimeMs = primary.averageGroundContactTimeMs ?: secondary.averageGroundContactTimeMs,
+                    averageStepLengthMm = primary.averageStepLengthMm ?: secondary.averageStepLengthMm,
+                    lapsJson = primary.lapsJson.takeUnless { it == "[]" } ?: secondary.lapsJson,
                     rawFileName = primary.rawFileName ?: secondary.rawFileName,
                 )
             }
@@ -590,7 +652,13 @@ class MountainFormRepository(
 
     suspend fun proposeNextBaseBlock(today: LocalDate = LocalDate.now()): ImportPreview {
         val existing = dao.getSessions()
-        val lastDate = existing.maxOfOrNull { LocalDate.ofEpochDay(it.plannedEpochDay) } ?: today
+        if (AgreedHybridPlan.isRelevant(today, existing.mapTo(mutableSetOf()) { it.id })) {
+            return previewPlan(json.encodeToString(AgreedHybridPlan.envelope()))
+        }
+        val lastDate = maxOf(
+            today,
+            existing.maxOfOrNull { LocalDate.ofEpochDay(it.plannedEpochDay) } ?: today,
+        )
         val firstTuesday = lastDate.plusDays(1).with(TemporalAdjusters.nextOrSame(DayOfWeek.TUESDAY))
         val profile = requireNotNull(dao.getProfile())
         val sessions = buildList {
@@ -640,9 +708,10 @@ class MountainFormRepository(
                                 sets = if (deload) 2 else 3, reps = 8,
                             ),
                             ExerciseStep(
-                                "hinge", "Румынская тяга с лёгким весом", if (deload) "2 × 8, RPE 4" else "3 × 8, RPE 5",
-                                "Вес близко к ногам, плечо без боли", restSeconds = 75, blockId = "main", blockTitle = "Основная сила",
-                                sets = if (deload) 2 else 3, reps = 8,
+                                "bridge", "Ягодичный мост", if (deload) "2 × 10, RPE 4" else "3 × 10, RPE 5",
+                                "Руки лежат без боли; пауза наверху", restSeconds = 75, blockId = "main", blockTitle = "Основная сила",
+                                exerciseId = "bridge", illustrationKey = "glute-bridge",
+                                sets = if (deload) 2 else 3, reps = 10,
                             ),
                             ExerciseStep(
                                 "calf", "Подъём на носки", if (deload) "2 × 12" else "3 × 12", "Медленное опускание",
@@ -739,8 +808,11 @@ class MountainFormRepository(
                         sets = 3, reps = 8,
                     )
                     "hinge" -> step.copy(
-                        restSeconds = 75, blockId = "hinge", blockTitle = "Основная сила: тяга",
-                        sets = 3, reps = 8,
+                        id = "bridge", title = "Ягодичный мост", prescription = "3 × 10, RPE 5",
+                        instructions = "Руки лежат без боли; пауза наверху",
+                        exerciseId = "bridge", illustrationKey = "glute-bridge",
+                        restSeconds = 75, blockId = "bridge", blockTitle = "Основная сила: ягодицы",
+                        sets = 3, reps = 10,
                     )
                     "calf" -> step.copy(
                         restSeconds = 15, blockId = "accessory", blockTitle = "Core и аксессуары",
@@ -878,8 +950,9 @@ class MountainFormRepository(
                         restSeconds = 75, blockId = "squat", blockTitle = "Основная сила: присед", sets = 3, reps = 8,
                     ),
                     ExerciseStep(
-                        "hinge", "Румынская тяга с лёгким весом", "3 × 8, RPE 5", "Ровная спина, медленное опускание",
-                        restSeconds = 75, blockId = "hinge", blockTitle = "Основная сила: тяга", sets = 3, reps = 8,
+                        "bridge", "Ягодичный мост", "3 × 10, RPE 5", "Руки лежат без боли; пауза наверху",
+                        restSeconds = 75, exerciseId = "bridge", illustrationKey = "glute-bridge",
+                        blockId = "bridge", blockTitle = "Основная сила: ягодицы", sets = 3, reps = 10,
                     ),
                     ExerciseStep(
                         "calf", "Подъём на носки", "3 × 12", "Полный контролируемый диапазон",
@@ -921,9 +994,15 @@ class MountainFormRepository(
     }
 
     companion object {
-        val SHOULDER_RESTRICTION_TAGS = setOf("SHOULDER_ABDUCTION", "OVERHEAD", "HANGING", "DIPS")
+        val SHOULDER_RESTRICTION_TAGS = setOf(
+            "SHOULDER_ABDUCTION", "SHOULDER_LOADING", "OVERHEAD", "HANGING", "DIPS", "PUSH_UP", "PLANK", "CARRY",
+        )
         val SHOULDER_RISK_WORDS = setOf(
-            "над головой", "подтяг", "брусь", "отведен", "разведен", "жим вверх", "overhead", "pull-up", "dips",
+            "над головой", "подтяг", "брусь", "отведен", "разведен", "жим вверх", "румынская тяга", "гиря",
+            "гантел", "планка", "отжим", "переноска", "overhead", "pull-up", "dips",
         )
     }
+
+    private inline fun <reified T> decodeList(rawJson: String): List<T> =
+        runCatching { json.decodeFromString<List<T>>(rawJson) }.getOrDefault(emptyList())
 }
