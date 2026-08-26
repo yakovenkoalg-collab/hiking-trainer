@@ -1,7 +1,7 @@
 {
-  "versionCode": 9,
-  "versionName": "0.3.6",
-  "apkUrl": "https://github.com/yakovenkoalg-collab/hiking-trainer/releases/download/v0.3.6/mountain-form-0.3.6.apk",
-  "sha256": "81fb0639715fcf6ee19c9edf6e23e2c0b2d9ca81e4f853ad3879a130c51999dc",
-  "notes": "Гибридный план бега, ног и core на 22–30 августа, подробные показатели Garmin FIT/ZIP, усиленная защита плеча и безопасная замена будущего плана с сохранением истории."
+  "versionCode": 10,
+  "versionName": "0.3.7",
+  "apkUrl": "https://github.com/yakovenkoalg-collab/hiking-trainer/releases/download/v0.3.7/mountain-form-0.3.7.apk",
+  "sha256": "b63fb4524528c59a09766cc4d9aa3e4894ab829f53c18caad45f9d3df4204538",
+  "notes": "Компактный экран Сегодня, краткий обзор тренировки с доступной кнопкой запуска, упрощённые календарь, прогресс, Garmin и обмен данными, подробности техники и безопасности по запросу."
 }
