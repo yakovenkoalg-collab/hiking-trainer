@@ -60,7 +60,7 @@ fun MoreScreen(
         item {
             SettingsEntry(
                 Icons.Default.HealthAndSafety,
-                "Garmin / Health Connect",
+                "Тренировки Garmin",
                 when {
                     healthSummary.permissionsGranted && healthSummary.hasAnyData -> "Данные получены"
                     healthSummary.permissionsGranted -> "Доступ есть, записей пока нет"

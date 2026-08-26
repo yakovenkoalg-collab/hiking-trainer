@@ -1,5 +1,7 @@
 package ru.yakovenko.mountainform.ui.screens
 
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
@@ -10,10 +12,12 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.filled.HealthAndSafety
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.FilterChip
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -36,6 +40,7 @@ import ru.yakovenko.mountainform.data.ActivityLinkStatus
 import ru.yakovenko.mountainform.data.ActivityLapSummary
 import ru.yakovenko.mountainform.data.ImportedActivityEntity
 import ru.yakovenko.mountainform.data.TrainingSessionEntity
+import ru.yakovenko.mountainform.health.HealthSummary
 import ru.yakovenko.mountainform.ui.formatEpochDay
 import ru.yakovenko.mountainform.ui.oneDecimal
 import java.time.Instant
@@ -49,11 +54,21 @@ import kotlin.math.roundToLong
 fun ActivitiesScreen(
     activities: List<ImportedActivityEntity>,
     sessions: List<TrainingSessionEntity>,
+    healthSummary: HealthSummary,
     onBack: () -> Unit,
+    onRequestPermissions: () -> Unit,
+    onRefresh: () -> Unit,
+    onWindowChange: (Int) -> Unit,
+    onShowPrivacy: () -> Unit,
+    onImportFit: (android.net.Uri) -> Unit,
     onLinkActivity: (String, String?) -> Unit,
     onIgnoreActivity: (String) -> Unit,
 ) {
     var linkingActivity by remember { mutableStateOf<ImportedActivityEntity?>(null) }
+    var showSources by remember { mutableStateOf(false) }
+    val fitPicker = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
+        if (uri != null) onImportFit(uri)
+    }
     Scaffold(
         topBar = {
             TopAppBar(
@@ -71,12 +86,97 @@ fun ActivitiesScreen(
             contentPadding = PaddingValues(16.dp),
             verticalArrangement = Arrangement.spacedBy(12.dp),
         ) {
+            item {
+                Card {
+                    Column(Modifier.fillMaxWidth().padding(14.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                        Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                            Icon(Icons.Default.HealthAndSafety, contentDescription = null, tint = MaterialTheme.colorScheme.primary)
+                            Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                                Text(healthConnectionTitle(healthSummary), fontWeight = FontWeight.Bold)
+                                Text(
+                                    healthSummary.refreshedAtEpochMillis?.let { "Проверено ${formatActivityTime(it)}" }
+                                        ?: "Сначала синхронизируйте часы с Garmin Connect",
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                )
+                            }
+                        }
+                        healthSummary.error?.let { Text(it, color = MaterialTheme.colorScheme.error) }
+                        if (healthSummary.permissionsGranted) {
+                            Button(onClick = onRefresh, modifier = Modifier.fillMaxWidth()) { Text("Обновить данные") }
+                        } else {
+                            Button(onClick = onRequestPermissions, modifier = Modifier.fillMaxWidth()) { Text("Разрешить чтение") }
+                        }
+                        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                            listOf(7, 30, 90).forEach { days ->
+                                FilterChip(
+                                    selected = healthSummary.windowDays == days,
+                                    onClick = { onWindowChange(days) },
+                                    label = { Text("$days дн.") },
+                                )
+                            }
+                        }
+                        healthSummaryLine(healthSummary)?.let {
+                            Text(it, style = MaterialTheme.typography.bodySmall)
+                        }
+                        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                            OutlinedButton(
+                                onClick = {
+                                    fitPicker.launch(
+                                        arrayOf(
+                                            "application/octet-stream",
+                                            "application/vnd.ant.fit",
+                                            "application/zip",
+                                            "*/*",
+                                        ),
+                                    )
+                                },
+                                modifier = Modifier.weight(1f),
+                            ) { Text("Импорт FIT / ZIP") }
+                            TextButton(onClick = { showSources = !showSources }) {
+                                Text(if (showSources) "Скрыть" else "Источники")
+                            }
+                        }
+                        if (showSources) {
+                            Text(
+                                if (healthSummary.dataOrigins.isEmpty()) {
+                                    "Источник пока не определён"
+                                } else {
+                                    "Источники: ${healthSummary.dataOrigins.joinToString { friendlyOrigin(it) }}"
+                                },
+                                style = MaterialTheme.typography.bodySmall,
+                            )
+                            Text(
+                                "Garmin Connect передаёт данные через Health Connect. FIT/ZIP добавляет Training Effect, нагрузку, круги, зоны и другие подробные показатели.",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
+                            TextButton(onClick = onShowPrivacy) { Text("Как используются данные") }
+                        }
+                    }
+                }
+            }
+            item {
+                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                    Text("Активности", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
+                    activities.count { it.status == ActivityLinkStatus.UNLINKED }.takeIf { it > 0 }?.let {
+                        Text("Не связано: $it", color = MaterialTheme.colorScheme.primary)
+                    }
+                }
+            }
             if (activities.isEmpty()) {
                 item {
                     Card {
                         Column(Modifier.fillMaxWidth().padding(16.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
                             Text("Нет тренировок Garmin", fontWeight = FontWeight.Bold)
-                            Text("Обновите данные в разделе «Ещё → Garmin»", style = MaterialTheme.typography.bodySmall)
+                            Text(
+                                if (healthSummary.permissionsGranted) {
+                                    "Нажмите «Обновить данные» после синхронизации Garmin Connect или импортируйте FIT/ZIP."
+                                } else {
+                                    "Сначала разрешите чтение Health Connect. Если активности не передаются, импортируйте FIT/ZIP."
+                                },
+                                style = MaterialTheme.typography.bodySmall,
+                            )
                         }
                     }
                 }
@@ -118,6 +218,26 @@ fun ActivitiesScreen(
             dismissButton = { TextButton(onClick = { linkingActivity = null }) { Text("Отмена") } },
         )
     }
+}
+
+private fun healthConnectionTitle(summary: HealthSummary): String = when {
+    summary.permissionsGranted && summary.hasAnyData -> "Подключено, данные получены"
+    summary.permissionsGranted -> "Чтение разрешено, записей нет"
+    summary.available -> "Нужно разрешение на чтение"
+    else -> "Health Connect недоступен"
+}
+
+private fun healthSummaryLine(summary: HealthSummary): String? = buildList {
+    if (summary.workouts > 0) add("${summary.workouts} тренировок")
+    if (summary.distanceKm > 0) add("${summary.distanceKm.oneDecimal()} км")
+    if (summary.elevationMeters > 0) add("+${summary.elevationMeters.toInt()} м")
+    summary.averageHeartRate?.let { add("пульс ${it.toInt()}") }
+}.takeIf { it.isNotEmpty() }?.joinToString(" · ")
+
+private fun friendlyOrigin(packageName: String): String = when (packageName) {
+    "com.garmin.android.apps.connectmobile" -> "Garmin Connect"
+    "android" -> "Этот телефон"
+    else -> packageName
 }
 
 @Composable

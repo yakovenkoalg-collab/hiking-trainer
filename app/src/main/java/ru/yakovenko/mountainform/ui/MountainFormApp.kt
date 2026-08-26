@@ -44,7 +44,6 @@ import ru.yakovenko.mountainform.ui.screens.AboutScreen
 import ru.yakovenko.mountainform.ui.screens.ActivitiesScreen
 import ru.yakovenko.mountainform.ui.screens.CalendarScreen
 import ru.yakovenko.mountainform.ui.screens.DataSyncScreen
-import ru.yakovenko.mountainform.ui.screens.HealthSettingsScreen
 import ru.yakovenko.mountainform.ui.screens.MoreScreen
 import ru.yakovenko.mountainform.ui.screens.PostureScreen
 import ru.yakovenko.mountainform.ui.screens.ProfileSettingsScreen
@@ -64,7 +63,7 @@ private val destinations = listOf(
 )
 
 private val detailRoutes = setOf(
-    "profile-settings", "health-settings", "sync-settings", "posture", "reminders", "about", "activities",
+    "profile-settings", "sync-settings", "posture", "reminders", "about", "activities",
 )
 
 @Composable
@@ -173,7 +172,7 @@ fun MountainFormApp(
                     healthSummary = healthSummary,
                     updateState = updateState,
                     onOpenProfile = { navController.navigate("profile-settings") },
-                    onOpenHealth = { navController.navigate("health-settings") },
+                    onOpenHealth = { navController.navigate("activities") },
                     onOpenSync = { navController.navigate("sync-settings") },
                     onOpenPosture = { navController.navigate("posture") },
                     onOpenReminders = { navController.navigate("reminders") },
@@ -188,22 +187,17 @@ fun MountainFormApp(
                     onSaveGoal = viewModel::updateGoal,
                 )
             }
-            composable("health-settings") {
-                HealthSettingsScreen(
-                    summary = healthSummary,
+            composable("activities") {
+                ActivitiesScreen(
+                    activities = state.importedActivities,
+                    sessions = state.sessions,
+                    healthSummary = healthSummary,
                     onBack = { navController.popBackStack() },
                     onRequestPermissions = onRequestHealthPermissions,
                     onRefresh = viewModel::refreshHealth,
                     onWindowChange = viewModel::setHealthWindow,
                     onShowPrivacy = { showPrivacyPolicy = true },
                     onImportFit = viewModel::importFit,
-                )
-            }
-            composable("activities") {
-                ActivitiesScreen(
-                    activities = state.importedActivities,
-                    sessions = state.sessions,
-                    onBack = { navController.popBackStack() },
                     onLinkActivity = viewModel::linkActivity,
                     onIgnoreActivity = viewModel::ignoreActivity,
                 )
