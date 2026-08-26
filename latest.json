@@ -1,7 +1,7 @@
 {
-  "versionCode": 12,
-  "versionName": "0.3.9",
-  "apkUrl": "https://github.com/yakovenkoalg-collab/hiking-trainer/releases/download/v0.3.9/mountain-form-0.3.9.apk",
-  "sha256": "3d531ab11aecca3e6a2efc4def2be4e150ef11a72385f7b9f94d7761efbd2087",
-  "notes": "Единый экран Garmin: обновление Health Connect, импорт FIT/ZIP, просмотр и привязка активности к тренировке в одном сценарии."
+  "versionCode": 13,
+  "versionName": "0.3.10",
+  "apkUrl": "https://github.com/yakovenkoalg-collab/hiking-trainer/releases/download/v0.3.10/mountain-form-0.3.10.apk",
+  "sha256": "f2e795089a422fae97c3e019c71ec95b94b552ad3729ad7ff503652448e9a92c",
+  "notes": "Единый период 7/30/90 дней для Health Connect и FIT, безопасные и обратимые действия в тренировке, исправления календаря, форм и адаптивности экранов."
 }
