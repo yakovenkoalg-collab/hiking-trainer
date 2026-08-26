@@ -1,7 +1,7 @@
 {
-  "versionCode": 10,
-  "versionName": "0.3.7",
-  "apkUrl": "https://github.com/yakovenkoalg-collab/hiking-trainer/releases/download/v0.3.7/mountain-form-0.3.7.apk",
-  "sha256": "b63fb4524528c59a09766cc4d9aa3e4894ab829f53c18caad45f9d3df4204538",
-  "notes": "Компактный экран Сегодня, краткий обзор тренировки с доступной кнопкой запуска, упрощённые календарь, прогресс, Garmin и обмен данными, подробности техники и безопасности по запросу."
+  "versionCode": 11,
+  "versionName": "0.3.8",
+  "apkUrl": "https://github.com/yakovenkoalg-collab/hiking-trainer/releases/download/v0.3.8/mountain-form-0.3.8.apk",
+  "sha256": "d04ea3b509772b9f71a2a9fd257558e8e80851f8c6131a83536a0e32cf430bf1",
+  "notes": "Адаптивный главный экран с единым блоком состояния и ограничений, выделенной следующей тренировкой и компактными действиями; беговая цель перенесена в Прогресс."
 }
