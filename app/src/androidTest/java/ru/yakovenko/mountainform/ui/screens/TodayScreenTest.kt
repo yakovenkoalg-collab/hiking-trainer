@@ -98,7 +98,7 @@ class TodayScreenTest {
             }
         }
 
-        composeRule.onNodeWithText("Выполнено").performScrollTo().assertIsDisplayed()
+        composeRule.onNodeWithText("Отменить").performScrollTo().assertIsDisplayed()
         composeRule.onNodeWithText("Сформировать отчёт").performScrollTo().assertIsDisplayed()
     }
 

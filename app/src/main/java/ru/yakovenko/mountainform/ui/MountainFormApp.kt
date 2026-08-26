@@ -9,10 +9,13 @@ import androidx.compose.material.icons.filled.MoreHoriz
 import androidx.compose.material3.AlertDialog
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.material3.Card
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.NavigationBar
 import androidx.compose.material3.NavigationBarItem
@@ -30,6 +33,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
@@ -82,6 +86,15 @@ fun MountainFormApp(
     val message by viewModel.message.collectAsStateWithLifecycle()
     val updateState by viewModel.updateState.collectAsStateWithLifecycle()
     val yandexConnected by viewModel.yandexConnected.collectAsStateWithLifecycle()
+    if (state.profile == null || state.settings == null) {
+        Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+            Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                CircularProgressIndicator()
+                Text("Загружаем план и историю…")
+            }
+        }
+        return
+    }
     val context = LocalContext.current
     val workoutSignal = remember(context) { WorkoutSignal(context.applicationContext) }
     DisposableEffect(workoutSignal) {
@@ -132,7 +145,9 @@ fun MountainFormApp(
                     state = state,
                     onSaveReadiness = viewModel::saveReadiness,
                     onOpenSession = { navController.navigate("session/$it") },
+                    onOpenCalendar = { navController.navigate("calendar") },
                     onCompleteCorePractice = viewModel::completeCorePractice,
+                    onUndoCorePractice = viewModel::undoCorePractice,
                     onShareReviewReport = {
                         viewModel.exportReport { report ->
                             val intent = Intent(Intent.ACTION_SEND).apply {
@@ -200,6 +215,7 @@ fun MountainFormApp(
                     onImportFit = viewModel::importFit,
                     onLinkActivity = viewModel::linkActivity,
                     onIgnoreActivity = viewModel::ignoreActivity,
+                    onRestoreActivity = viewModel::restoreActivity,
                 )
             }
             composable("sync-settings") {
@@ -292,6 +308,10 @@ fun MountainFormApp(
                     onSkip = { sessionId, reason ->
                         viewModel.clearWorkoutExecution(sessionId)
                         viewModel.skipSession(sessionId, reason)
+                        navController.popBackStack()
+                    },
+                    onRestoreSkipped = { sessionId ->
+                        viewModel.restoreSkippedSession(sessionId)
                         navController.popBackStack()
                     },
                 )
@@ -393,7 +413,8 @@ fun MountainFormApp(
             text = {
                 Text(
                     "Горная форма читает выбранные вами данные Health Connect: тренировки, пульс, сон, шаги, " +
-                        "дистанцию, набор высоты и вес. Они используются локально. В общую папку отчёт попадает только после вашего выбора.",
+                        "дистанцию, набор высоты и вес. База хранится на устройстве. Отчёт выгружается вручную или после изменений, если вы включили автообмен. " +
+                        "Фото осанки и токен Яндекса в отчёт не входят.",
                 )
             },
             confirmButton = { TextButton(onClick = { showPrivacyPolicy = false }) { Text("Понятно") } },

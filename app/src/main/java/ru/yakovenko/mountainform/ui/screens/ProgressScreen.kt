@@ -8,6 +8,8 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material3.Card
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
@@ -24,6 +26,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import ru.yakovenko.mountainform.data.GoalType
 import ru.yakovenko.mountainform.data.SessionStatus
@@ -46,6 +49,7 @@ fun ProgressScreen(
     val weekStart = today - 6
     val weekSessions = state.sessions.filter { it.plannedEpochDay in weekStart..today }
     val completed = weekSessions.count { it.status == SessionStatus.COMPLETED }
+    val skipped = weekSessions.count { it.status == SessionStatus.SKIPPED }
     val planned = weekSessions.size
     val completion = if (planned == 0) 0f else completed.toFloat() / planned
     val practices = state.practices.count { it.epochDay in weekStart..today }
@@ -68,30 +72,29 @@ fun ProgressScreen(
             Card {
                 Column(Modifier.fillMaxWidth().padding(14.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                     if (planned == 0) {
-                        Text("Эта неделя", fontWeight = FontWeight.Bold)
-                        Text("Тренировок пока нет", style = MaterialTheme.typography.bodySmall)
+                        Text("Последние 7 дней", fontWeight = FontWeight.Bold)
+                        Text("В этом периоде тренировок нет", style = MaterialTheme.typography.bodySmall)
                     } else {
                         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                            Text("Выполнение недели", fontWeight = FontWeight.Bold)
+                            Text("Последние 7 дней", fontWeight = FontWeight.Bold)
                             Text("$completed из $planned")
                         }
                         LinearProgressIndicator(progress = { completion }, modifier = Modifier.fillMaxWidth())
+                        if (skipped > 0) {
+                            Text("Пропущено: $skipped", style = MaterialTheme.typography.bodySmall)
+                        }
                     }
                 }
             }
         }
         item {
-            val unlinked = state.importedActivities.count { it.status == ru.yakovenko.mountainform.data.ActivityLinkStatus.UNLINKED }
+            val garmin = garminActivitySummary(state.importedActivities, healthSummary)
             Card(onClick = onOpenActivities) {
                 Column(Modifier.fillMaxWidth().padding(14.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                    Text("Garmin · ${healthSummary.windowDays} дней", fontWeight = FontWeight.Bold)
+                    Text("Тренировки Garmin", fontWeight = FontWeight.Bold)
                     Text(
-                        when {
-                            unlinked > 0 -> "$unlinked тренировок нужно проверить"
-                            healthSummary.hasAnyData -> "Данные получены"
-                            else -> "Тренировок пока нет"
-                        },
-                        color = if (unlinked > 0) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
+                        garmin.text,
+                        color = if (garmin.needsAttention) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
                         style = MaterialTheme.typography.bodySmall,
                     )
                 }
@@ -171,34 +174,46 @@ private fun BodyMetricDialog(
     var hydration by remember { mutableStateOf(false) }
     var alcoholFree by remember { mutableStateOf(true) }
     var notes by remember { mutableStateOf("") }
+    val parsedWeight = weight.toDoubleOrNull()
+    val parsedWaist = waist.toDoubleOrNull()
+    val weightInvalid = weight.isNotBlank() && (parsedWeight == null || parsedWeight < 35.0 || parsedWeight > 250.0)
+    val waistInvalid = waist.isNotBlank() && (parsedWaist == null || parsedWaist < 40.0 || parsedWaist > 200.0)
+    val formValid = !weightInvalid && !waistInvalid
     AlertDialog(
         onDismissRequest = onDismiss,
         title = { Text("Метрики сегодня") },
         text = {
-            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                OutlinedTextField(
+            LazyColumn(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                item { OutlinedTextField(
                     value = weight,
-                    onValueChange = { weight = it.replace(',', '.') },
+                    onValueChange = { weight = it.replace(',', '.').filter { char -> char.isDigit() || char == '.' } },
                     label = { Text("Вес, кг") },
+                    isError = weightInvalid,
+                    supportingText = { if (weightInvalid) Text("Допустимо 35–250 кг") },
+                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
                     modifier = Modifier.fillMaxWidth(),
-                )
-                OutlinedTextField(
+                ) }
+                item { OutlinedTextField(
                     value = waist,
-                    onValueChange = { waist = it.replace(',', '.') },
+                    onValueChange = { waist = it.replace(',', '.').filter { char -> char.isDigit() || char == '.' } },
                     label = { Text("Талия, см") },
+                    isError = waistInvalid,
+                    supportingText = { if (waistInvalid) Text("Допустимо 40–200 см") },
+                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
                     modifier = Modifier.fillMaxWidth(),
-                )
-                MetricCheck("Белок по плану", protein) { protein = it }
-                MetricCheck("Овощи и фрукты", produce) { produce = it }
-                MetricCheck("Достаточно воды", hydration) { hydration = it }
-                MetricCheck("Без алкоголя", alcoholFree) { alcoholFree = it }
-                OutlinedTextField(notes, { notes = it }, label = { Text("Комментарий") }, modifier = Modifier.fillMaxWidth())
+                ) }
+                item { MetricCheck("Белок по плану", protein) { protein = it } }
+                item { MetricCheck("Овощи и фрукты", produce) { produce = it } }
+                item { MetricCheck("Достаточно воды", hydration) { hydration = it } }
+                item { MetricCheck("Без алкоголя", alcoholFree) { alcoholFree = it } }
+                item { OutlinedTextField(notes, { notes = it }, label = { Text("Комментарий") }, modifier = Modifier.fillMaxWidth()) }
             }
         },
         confirmButton = {
-            Button(onClick = {
-                onSave(weight.toDoubleOrNull(), waist.toDoubleOrNull(), protein, produce, hydration, alcoholFree, notes)
-            }) { Text("Сохранить") }
+            Button(
+                enabled = formValid,
+                onClick = { onSave(parsedWeight, parsedWaist, protein, produce, hydration, alcoholFree, notes) },
+            ) { Text("Сохранить") }
         },
         dismissButton = { TextButton(onClick = onDismiss) { Text("Отмена") } },
     )
@@ -206,8 +221,11 @@ private fun BodyMetricDialog(
 
 @Composable
 private fun MetricCheck(label: String, checked: Boolean, onCheckedChange: (Boolean) -> Unit) {
-    Row(verticalAlignment = androidx.compose.ui.Alignment.CenterVertically) {
-        Checkbox(checked = checked, onCheckedChange = onCheckedChange)
+    Row(
+        modifier = Modifier.fillMaxWidth().clickable { onCheckedChange(!checked) },
+        verticalAlignment = androidx.compose.ui.Alignment.CenterVertically,
+    ) {
+        Checkbox(checked = checked, onCheckedChange = null)
         Text(label)
     }
 }

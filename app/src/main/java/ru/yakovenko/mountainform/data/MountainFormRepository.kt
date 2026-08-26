@@ -4,6 +4,7 @@ import kotlinx.coroutines.flow.Flow
 import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
 import ru.yakovenko.mountainform.domain.AgreedHybridPlan
+import ru.yakovenko.mountainform.domain.ShoulderSafety
 import java.time.DayOfWeek
 import java.time.LocalDate
 import java.time.temporal.TemporalAdjusters
@@ -184,8 +185,14 @@ class MountainFormRepository(
         )
     }
 
+    suspend fun undoCorePractice() {
+        val epochDay = LocalDate.now().toEpochDay()
+        dao.deletePractice("$epochDay-core-posture")
+    }
+
     suspend fun completeSession(id: String, rpe: Int, notes: String, actualDurationSeconds: Int) {
         val session = dao.getSessions().firstOrNull { it.id == id } ?: return
+        require(session.status == SessionStatus.PLANNED) { "Завершить можно только запланированную тренировку" }
         dao.upsertSession(
             session.copy(
                 status = SessionStatus.COMPLETED,
@@ -200,11 +207,26 @@ class MountainFormRepository(
 
     suspend fun skipSession(id: String, reason: String) {
         val session = dao.getSessions().firstOrNull { it.id == id } ?: return
+        require(session.status == SessionStatus.PLANNED) { "Пропустить можно только запланированную тренировку" }
         dao.upsertSession(
             session.copy(
                 status = SessionStatus.SKIPPED,
                 completedAtEpochMillis = System.currentTimeMillis(),
-                completionNotes = reason.trim(),
+                completionNotes = reason.trim().ifBlank { "Пропущена пользователем" },
+            ),
+        )
+    }
+
+    suspend fun restoreSkippedSession(id: String) {
+        val session = dao.getSession(id) ?: return
+        require(session.status == SessionStatus.SKIPPED) { "Вернуть в план можно только пропущенную тренировку" }
+        dao.upsertSession(
+            session.copy(
+                status = SessionStatus.PLANNED,
+                completedAtEpochMillis = null,
+                actualRpe = null,
+                actualDurationSeconds = 0,
+                completionNotes = "",
             ),
         )
     }
@@ -434,6 +456,9 @@ class MountainFormRepository(
         val plan = json.decodeFromString<PlanEnvelope>(rawJson)
         require(plan.schemaVersion == 1) { "Неподдерживаемая версия схемы: ${plan.schemaVersion}" }
         require(plan.sessions.isNotEmpty()) { "План не содержит тренировок" }
+        require(plan.sessions.all { it.steps.isNotEmpty() }) {
+            "Каждая тренировка должна содержать хотя бы одно упражнение"
+        }
         require(
             (plan.replacePlannedFromEpochDay == null) == (plan.replacePlannedThroughEpochDay == null),
         ) { "Диапазон замены будущего плана задан не полностью" }
@@ -458,13 +483,7 @@ class MountainFormRepository(
         val profile = requireNotNull(dao.getProfile())
         val conflicts = plan.sessions.flatMap { session ->
             session.steps.mapNotNull { step ->
-                val shoulderConflict = profile.shoulderRestrictionActive &&
-                    (
-                        step.restrictionTags.any { it in SHOULDER_RESTRICTION_TAGS } ||
-                            SHOULDER_RISK_WORDS.any { word ->
-                                "${step.title} ${step.instructions}".lowercase().contains(word)
-                            }
-                        )
+                val shoulderConflict = profile.shoulderRestrictionActive && ShoulderSafety.conflicts(step)
                 if (shoulderConflict) "${session.title}: ${step.title} конфликтует с ограничением плеча" else null
             }
         }
@@ -613,14 +632,7 @@ class MountainFormRepository(
     }
 
     suspend fun linkActivity(activityId: String, sessionId: String?) {
-        val activity = dao.getImportedActivity(activityId) ?: return
-        require(sessionId == null || dao.getSession(sessionId) != null) { "Тренировка не найдена" }
-        dao.upsertImportedActivity(
-            activity.copy(
-                linkedSessionId = sessionId,
-                status = if (sessionId == null) ActivityLinkStatus.UNLINKED else ActivityLinkStatus.LINKED,
-            ),
-        )
+        dao.linkImportedActivity(activityId, sessionId)
     }
 
     suspend fun ignoreActivity(activityId: String) {
@@ -991,16 +1003,6 @@ class MountainFormRepository(
                 ),
             ),
         ).sortedBy { it.plannedEpochDay }
-    }
-
-    companion object {
-        val SHOULDER_RESTRICTION_TAGS = setOf(
-            "SHOULDER_ABDUCTION", "SHOULDER_LOADING", "OVERHEAD", "HANGING", "DIPS", "PUSH_UP", "PLANK", "CARRY",
-        )
-        val SHOULDER_RISK_WORDS = setOf(
-            "над головой", "подтяг", "брусь", "отведен", "разведен", "жим вверх", "румынская тяга", "гиря",
-            "гантел", "планка", "отжим", "переноска", "overhead", "pull-up", "dips",
-        )
     }
 
     private inline fun <reified T> decodeList(rawJson: String): List<T> =

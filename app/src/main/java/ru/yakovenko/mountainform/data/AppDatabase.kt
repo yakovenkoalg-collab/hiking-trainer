@@ -95,6 +95,9 @@ interface MountainFormDao {
     @Upsert
     suspend fun upsertPractices(practices: List<PracticeLogEntity>)
 
+    @Query("DELETE FROM practice_logs WHERE id = :id")
+    suspend fun deletePractice(id: String)
+
     @Query("SELECT * FROM exercise_catalog ORDER BY category, title")
     fun observeExerciseCatalog(): Flow<List<ExerciseCatalogEntity>>
 
@@ -199,6 +202,24 @@ interface MountainFormDao {
 
     @Upsert
     suspend fun upsertImportedActivities(activities: List<ImportedActivityEntity>)
+
+    @Transaction
+    suspend fun linkImportedActivity(activityId: String, sessionId: String?) {
+        val activity = getImportedActivity(activityId) ?: return
+        if (sessionId != null) {
+            val session = getSession(sessionId) ?: error("Тренировка не найдена")
+            require(session.status != SessionStatus.SKIPPED) { "Пропущенную тренировку нельзя связать с активностью" }
+            require(
+                getImportedActivities().none { it.id != activityId && it.linkedSessionId == sessionId },
+            ) { "Тренировка уже связана с другой активностью" }
+        }
+        upsertImportedActivity(
+            activity.copy(
+                linkedSessionId = sessionId,
+                status = if (sessionId == null) ActivityLinkStatus.UNLINKED else ActivityLinkStatus.LINKED,
+            ),
+        )
+    }
 
     @Query(
         "DELETE FROM session_step_logs WHERE sessionId IN " +

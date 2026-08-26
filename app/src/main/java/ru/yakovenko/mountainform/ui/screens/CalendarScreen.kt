@@ -85,8 +85,14 @@ fun CalendarScreen(
                 month = selectedMonth,
                 selectedDate = selectedDate,
                 sessionsByDay = sessionsByDay,
-                onPreviousMonth = { selectedMonth = selectedMonth.minusMonths(1) },
-                onNextMonth = { selectedMonth = selectedMonth.plusMonths(1) },
+                onPreviousMonth = {
+                    selectedMonth = selectedMonth.minusMonths(1)
+                    selectedDate = dateInMonth(selectedDate, selectedMonth)
+                },
+                onNextMonth = {
+                    selectedMonth = selectedMonth.plusMonths(1)
+                    selectedDate = dateInMonth(selectedDate, selectedMonth)
+                },
                 onSelectDate = { selectedDate = it },
             )
         }
@@ -98,9 +104,9 @@ fun CalendarScreen(
                     "Тренировок нет"
                 } else {
                     buildList {
-                        if (selectedCompleted > 0) add("$selectedCompleted выполнено")
-                        if (selectedPlanned > 0) add("$selectedPlanned запланировано")
-                        if (selectedSkipped > 0) add("$selectedSkipped пропущено")
+                        if (selectedCompleted > 0) add(statusCount(selectedCompleted, "выполнена", "выполнены", "выполнено"))
+                        if (selectedPlanned > 0) add(statusCount(selectedPlanned, "запланирована", "запланированы", "запланировано"))
+                        if (selectedSkipped > 0) add(statusCount(selectedSkipped, "пропущена", "пропущены", "пропущено"))
                     }.joinToString(" · ")
                 },
             )
@@ -138,7 +144,7 @@ fun CalendarScreen(
                 Card {
                     Column(Modifier.fillMaxWidth().padding(14.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                         Text("План до ${formatEpochDay(lastPlannedDay)}", fontWeight = FontWeight.Bold)
-                        Text("$futurePlanned предстоящих тренировок", style = MaterialTheme.typography.bodySmall)
+                        Text(trainingCount(futurePlanned, "предстоящая", "предстоящие", "предстоящих"), style = MaterialTheme.typography.bodySmall)
                         Button(onClick = onProposeNextBlock, modifier = Modifier.fillMaxWidth()) {
                             Text("Обновить план")
                         }
@@ -337,34 +343,60 @@ private fun RescheduleDialog(
         onDismissRequest = onDismiss,
         title = { Text("Перенести тренировку") },
         text = {
-            Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                Text(session.title)
-                MonthCalendar(
+            LazyColumn(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                item { Text(session.title) }
+                item { MonthCalendar(
                     month = selectedMonth,
                     selectedDate = selectedDate,
                     sessionsByDay = emptyMap(),
-                    onPreviousMonth = { selectedMonth = selectedMonth.minusMonths(1) },
-                    onNextMonth = { selectedMonth = selectedMonth.plusMonths(1) },
+                    onPreviousMonth = {
+                        selectedMonth = selectedMonth.minusMonths(1)
+                        selectedDate = dateInMonth(selectedDate, selectedMonth)
+                    },
+                    onNextMonth = {
+                        selectedMonth = selectedMonth.plusMonths(1)
+                        selectedDate = dateInMonth(selectedDate, selectedMonth)
+                    },
                     onSelectDate = { selectedDate = it },
-                )
-                Text(
+                ) }
+                item { Text(
                     "Новая дата: ${formatEpochDay(selectedDate.toEpochDay())}",
                     style = MaterialTheme.typography.bodyMedium,
                     fontWeight = FontWeight.SemiBold,
-                )
-                OutlinedTextField(
+                ) }
+                if (selectedDate.toEpochDay() == session.plannedEpochDay) {
+                    item { Text("Выберите другую дату", color = MaterialTheme.colorScheme.error) }
+                }
+                item { OutlinedTextField(
                     value = reason,
                     onValueChange = { reason = it },
                     label = { Text("Причина переноса") },
                     modifier = Modifier.fillMaxWidth(),
-                )
+                ) }
             }
         },
         confirmButton = {
             Button(
+                enabled = selectedDate.toEpochDay() != session.plannedEpochDay,
                 onClick = { onConfirm(selectedDate, reason.ifBlank { "Перенос пользователем" }) },
             ) { Text("Перенести") }
         },
         dismissButton = { TextButton(onClick = onDismiss) { Text("Отмена") } },
     )
 }
+
+internal fun dateInMonth(date: LocalDate, month: YearMonth): LocalDate =
+    month.atDay(date.dayOfMonth.coerceAtMost(month.lengthOfMonth()))
+
+internal fun statusCount(count: Int, one: String, few: String, many: String): String {
+    val form = when {
+        count % 100 in 11..14 -> many
+        count % 10 == 1 -> one
+        count % 10 in 2..4 -> few
+        else -> many
+    }
+    return "$count $form"
+}
+
+private fun trainingCount(count: Int, one: String, few: String, many: String): String =
+    statusCount(count, "$one тренировка", "$few тренировки", "$many тренировок")

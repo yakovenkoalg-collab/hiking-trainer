@@ -160,6 +160,7 @@ class AppViewModel(
         viewModelScope.launch {
             repository.initialize()
             refreshHealth()
+            refreshUpdateState(showErrors = false)
         }
     }
 
@@ -263,13 +264,27 @@ class AppViewModel(
 
     fun linkActivity(activityId: String, sessionId: String?) {
         viewModelScope.launch {
-            repository.linkActivity(activityId, sessionId)
-            message.value = if (sessionId == null) "Связь удалена" else "Активность связана с планом"
+            runCatching { repository.linkActivity(activityId, sessionId) }
+                .onSuccess {
+                    message.value = if (sessionId == null) "Связь удалена" else "Активность связана с планом"
+                }
+                .onFailure { message.value = it.message ?: "Не удалось связать активность" }
         }
     }
 
     fun ignoreActivity(activityId: String) {
-        viewModelScope.launch { repository.ignoreActivity(activityId) }
+        viewModelScope.launch {
+            repository.ignoreActivity(activityId)
+            message.value = "Активность скрыта; её можно вернуть"
+        }
+    }
+
+    fun restoreActivity(activityId: String) {
+        viewModelScope.launch {
+            runCatching { repository.linkActivity(activityId, null) }
+                .onSuccess { message.value = "Активность вернута к привязке" }
+                .onFailure { message.value = it.message ?: "Не удалось вернуть активность" }
+        }
     }
 
     fun savePostureAssessment(selfRating: Int, notes: String, photoUris: List<String?>) {
@@ -470,10 +485,27 @@ class AppViewModel(
         }
     }
 
+    fun undoCorePractice() {
+        viewModelScope.launch {
+            repository.undoCorePractice()
+            message.value = "Отметка core и осанки снята"
+            automaticSyncIfEnabled()
+        }
+    }
+
     fun skipSession(id: String, reason: String) {
         viewModelScope.launch {
-            repository.skipSession(id, reason)
-            message.value = "Тренировка пропущена"
+            runCatching { repository.skipSession(id, reason) }
+                .onSuccess { message.value = "Тренировка пропущена" }
+                .onFailure { message.value = it.message ?: "Не удалось пропустить тренировку" }
+        }
+    }
+
+    fun restoreSkippedSession(id: String) {
+        viewModelScope.launch {
+            runCatching { repository.restoreSkippedSession(id) }
+                .onSuccess { message.value = "Тренировка возвращена в план" }
+                .onFailure { message.value = it.message ?: "Не удалось вернуть тренировку" }
         }
     }
 
@@ -585,29 +617,46 @@ class AppViewModel(
 
     fun setHealthWindow(days: Int) {
         if (days !in setOf(7, 30, 90)) return
+        healthSummary.value = healthSummary.value.copy(windowDays = days)
         viewModelScope.launch {
             val current = uiState.value.settings ?: AppSettingsEntity()
             repository.updateSettings(current.copy(healthWindowDays = days))
             healthSummary.value = healthConnectManager.readSummary(days)
+            runCatching { healthConnectManager.readActivities(days) }
+                .onSuccess { repository.upsertImportedActivities(it) }
         }
     }
 
     fun checkForUpdate() {
-        viewModelScope.launch {
-            updateState.value = updateState.value.copy(checking = true, message = "Проверяем обновления…")
-            runCatching { appUpdateManager.check() }
-                .onSuccess { release ->
-                    updateState.value = UpdateState(
-                        release = release,
-                        message = if (release == null) {
-                            if (ru.yakovenko.mountainform.BuildConfig.UPDATE_MANIFEST_URL.isBlank())
-                                "Канал обновлений будет подключён при первой публикации"
-                            else "Установлена актуальная версия"
-                        } else "Доступна версия ${release.versionName}",
-                    )
-                }
-                .onFailure { updateState.value = UpdateState(message = "Ошибка проверки: ${it.message}") }
-        }
+        viewModelScope.launch { refreshUpdateState(showErrors = true) }
+    }
+
+    private suspend fun refreshUpdateState(showErrors: Boolean) {
+        updateState.value = updateState.value.copy(
+            checking = true,
+            message = if (showErrors) "Проверяем обновления…" else updateState.value.message,
+        )
+        runCatching { appUpdateManager.check() }
+            .onSuccess { release ->
+                updateState.value = UpdateState(
+                    release = release,
+                    message = if (release == null) {
+                        if (ru.yakovenko.mountainform.BuildConfig.UPDATE_MANIFEST_URL.isBlank()) {
+                            "Канал обновлений будет подключён при первой публикации"
+                        } else {
+                            "Установлена актуальная версия"
+                        }
+                    } else {
+                        "Доступна версия ${release.versionName}"
+                    },
+                )
+            }
+            .onFailure { error ->
+                updateState.value = updateState.value.copy(
+                    checking = false,
+                    message = if (showErrors) "Ошибка проверки: ${error.message}" else updateState.value.message,
+                )
+            }
     }
 
     fun downloadUpdate() {

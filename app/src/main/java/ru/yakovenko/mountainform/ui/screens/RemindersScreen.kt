@@ -2,6 +2,7 @@ package ru.yakovenko.mountainform.ui.screens
 
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -21,6 +22,7 @@ import androidx.compose.material3.TextButton
 import androidx.compose.material3.TimePicker
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.rememberTimePickerState
+import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -58,11 +60,12 @@ fun RemindersScreen(
             )
         },
     ) { padding ->
-        Column(
-            Modifier.fillMaxSize().padding(padding).padding(20.dp),
+        LazyColumn(
+            Modifier.fillMaxSize().padding(padding),
+            contentPadding = PaddingValues(20.dp),
             verticalArrangement = Arrangement.spacedBy(18.dp),
         ) {
-            Row(
+            item { Row(
                 Modifier.fillMaxWidth(),
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.SpaceBetween,
@@ -78,22 +81,22 @@ fun RemindersScreen(
                     enabled = it
                     if (it) onRequestPermission()
                 })
-            }
-            Button(onClick = { showTimePicker = true }, enabled = enabled, modifier = Modifier.fillMaxWidth()) {
+            } }
+            item { Button(onClick = { showTimePicker = true }, enabled = enabled, modifier = Modifier.fillMaxWidth()) {
                 Text("Время: %02d:%02d".format(hour, minute))
-            }
-            Text(
+            } }
+            item { Text(
                 "Android может доставить периодическое уведомление немного позже выбранного времени для экономии батареи.",
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
-            Button(
+            ) }
+            item { Button(
                 onClick = {
                     onSave(current.copy(remindersEnabled = enabled, reminderHour = hour, reminderMinute = minute))
                     onBack()
                 },
                 modifier = Modifier.fillMaxWidth(),
-            ) { Text("Сохранить") }
+            ) { Text("Сохранить") } }
         }
     }
 

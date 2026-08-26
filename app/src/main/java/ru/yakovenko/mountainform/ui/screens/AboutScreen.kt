@@ -2,6 +2,7 @@ package ru.yakovenko.mountainform.ui.screens
 
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
@@ -18,6 +19,7 @@ import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
+import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
@@ -46,15 +48,16 @@ fun AboutScreen(
             )
         },
     ) { padding ->
-        Column(
-            Modifier.fillMaxSize().padding(padding).padding(20.dp),
+        LazyColumn(
+            Modifier.fillMaxSize().padding(padding),
+            contentPadding = PaddingValues(20.dp),
             verticalArrangement = Arrangement.spacedBy(16.dp),
         ) {
-            Card {
+            item { Card {
                 Column(Modifier.fillMaxWidth().padding(18.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
                     Text("Горная форма", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
                     Text("Версия ${ru.yakovenko.mountainform.BuildConfig.VERSION_NAME}")
-                    Text(updateState.message)
+                    if (updateState.message.isNotBlank()) Text(updateState.message)
                     when {
                         updateState.downloadedFile != null -> Button(onClick = onInstallUpdate, modifier = Modifier.fillMaxWidth()) {
                             Text("Установить обновление")
@@ -72,13 +75,13 @@ fun AboutScreen(
                     }
                     Text("Установку APK всегда подтверждает системный установщик Android.", style = MaterialTheme.typography.bodySmall)
                 }
-            }
-            TextButton(onClick = onShowPrivacy) { Text("Политика использования данных") }
-            Text(
+            } }
+            item { TextButton(onClick = onShowPrivacy) { Text("Политика использования данных") } }
+            item { Text(
                 "План и изменения нагрузки являются предложениями и применяются только после вашего подтверждения.",
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
+            ) }
         }
     }
 }

@@ -43,6 +43,7 @@ fun MoreScreen(
     onOpenReminders: () -> Unit,
     onOpenAbout: () -> Unit,
 ) {
+    val garmin = garminActivitySummary(state.importedActivities, healthSummary)
     LazyColumn(
         modifier = Modifier.fillMaxSize().padding(padding),
         contentPadding = PaddingValues(16.dp),
@@ -61,11 +62,7 @@ fun MoreScreen(
             SettingsEntry(
                 Icons.Default.HealthAndSafety,
                 "Тренировки Garmin",
-                when {
-                    healthSummary.permissionsGranted && healthSummary.hasAnyData -> "Данные получены"
-                    healthSummary.permissionsGranted -> "Доступ есть, записей пока нет"
-                    else -> "Требуется подключение"
-                },
+                garmin.text,
                 onOpenHealth,
             )
         }

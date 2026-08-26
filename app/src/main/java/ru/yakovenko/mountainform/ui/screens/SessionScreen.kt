@@ -2,6 +2,7 @@ package ru.yakovenko.mountainform.ui.screens
 
 import androidx.annotation.DrawableRes
 import androidx.compose.foundation.Image
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -51,6 +52,7 @@ import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import kotlinx.coroutines.delay
@@ -71,6 +73,7 @@ import ru.yakovenko.mountainform.domain.WorkoutPlanCompiler
 import ru.yakovenko.mountainform.domain.WorkoutExecutionState
 import ru.yakovenko.mountainform.domain.WorkoutSetTarget
 import ru.yakovenko.mountainform.domain.WorkoutTimerMode
+import ru.yakovenko.mountainform.domain.ShoulderSafety
 
 @Composable
 @OptIn(ExperimentalMaterial3Api::class)
@@ -95,6 +98,7 @@ fun SessionScreen(
     onTimerFinished: (WorkoutTimerMode) -> Unit = {},
     onComplete: (String, Int, String, Int) -> Unit,
     onSkip: (String, String) -> Unit,
+    onRestoreSkipped: (String) -> Unit = {},
 ) {
     if (session == null) {
         Column(Modifier.fillMaxSize().padding(padding).padding(20.dp)) {
@@ -125,6 +129,7 @@ fun SessionScreen(
     var showSkip by remember { mutableStateOf(false) }
     var showSkipStage by remember { mutableStateOf(false) }
     var showPainStop by remember { mutableStateOf(false) }
+    var showRestoreSkipped by remember { mutableStateOf(false) }
     var showSetResult by remember { mutableStateOf(false) }
     var editResultOnly by remember { mutableStateOf(false) }
     var showResetTimerConfirm by remember { mutableStateOf(false) }
@@ -147,6 +152,10 @@ fun SessionScreen(
     val step = target?.step
     val details = step?.let { current -> catalog.firstOrNull { it.id == current.catalogId() } }
     val completedCount = targets.count { key(it) in completedTargetKeys }
+    val allTargetsCompleted = targets.isNotEmpty() && completedCount == targets.size
+    val emptyPlan = targets.isEmpty()
+    val shoulderPlanConflict = shoulderRestrictionActive && steps.any(ShoulderSafety::conflicts)
+    val trainingBlocked = loadBlocked || emptyPlan || shoulderPlanConflict
     val currentLog = target?.let { current ->
         sessionSetLogs.firstOrNull {
             it.stepId == current.step.id && it.roundIndex == current.roundIndex && it.setIndex == current.setIndex
@@ -361,8 +370,8 @@ fun SessionScreen(
             persistExecution(executionState.snapshotAt(now).copy(restAlerted = true, timerTickStartedAtEpochMillis = now))
         }
     }
-    LaunchedEffect(loadBlocked, executionState.workoutStarted, executionState.paused) {
-        if (loadBlocked && executionState.workoutStarted && !executionState.paused) {
+    LaunchedEffect(trainingBlocked, executionState.workoutStarted, executionState.paused) {
+        if (trainingBlocked && executionState.workoutStarted && !executionState.paused) {
             pauseWorkoutForSafety()
         }
     }
@@ -382,12 +391,20 @@ fun SessionScreen(
             if (showOverview && session.status == SessionStatus.PLANNED) {
                 Surface(tonalElevation = 3.dp) {
                     Button(
-                        onClick = ::startOrResumeWorkout,
-                        enabled = !loadBlocked,
+                        onClick = {
+                            if (allTargetsCompleted) showCompletion = true else startOrResumeWorkout()
+                        },
+                        enabled = allTargetsCompleted || !trainingBlocked,
                         modifier = Modifier.fillMaxWidth().padding(16.dp).testTag("start_workout_button"),
                     ) {
-                        Icon(Icons.Default.PlayArrow, contentDescription = null)
-                        Text(if (executionState.workoutStarted) "  Продолжить" else "  Начать тренировку")
+                        Icon(if (allTargetsCompleted) Icons.Default.Check else Icons.Default.PlayArrow, contentDescription = null)
+                        Text(
+                            when {
+                                allTargetsCompleted -> "  Перейти к итогу"
+                                executionState.workoutStarted -> "  Продолжить"
+                                else -> "  Начать тренировку"
+                            },
+                        )
                     }
                 }
             }
@@ -447,7 +464,7 @@ fun SessionScreen(
                                     },
                                 )
                             },
-                            enabled = !(paused && loadBlocked),
+                            enabled = !(paused && trainingBlocked),
                                 modifier = Modifier.weight(1f),
                         ) {
                             Icon(if (paused) Icons.Default.PlayArrow else Icons.Default.Pause, contentDescription = null)
@@ -458,7 +475,20 @@ fun SessionScreen(
                 }
             }
 
-            if (loadBlocked) {
+            if (emptyPlan) {
+                item {
+                    SafetyBanner(
+                        "В плане тренировки нет этапов. Начать её нельзя: сначала обновите план.",
+                    )
+                }
+            } else if (shoulderPlanConflict) {
+                item {
+                    SafetyBanner(
+                        "План содержит упражнение, несовместимое с активным ограничением плеча. " +
+                            "Приложение не заменяет упражнение автоматически — обновите план.",
+                    )
+                }
+            } else if (loadBlocked) {
                 item {
                     Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
                         SafetyBanner(
@@ -552,6 +582,7 @@ fun SessionScreen(
                             else -> "Этап ${targetIndex + 1} из ${targets.size} · ${blockTypeLabel(currentTarget.blockType)}"
                         },
                         style = MaterialTheme.typography.labelMedium,
+                        modifier = Modifier.padding(top = 3.dp),
                     )
                     Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
                         Text(current.title, style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold, modifier = Modifier.weight(1f))
@@ -622,7 +653,7 @@ fun SessionScreen(
                                     val timerUnit = if (currentTarget.totalSets > 1) "подход" else "этап"
                                     Button(
                                         onClick = { quickCompleteCurrentTarget() },
-                                        enabled = executionState.workoutStarted && !loadBlocked && !paused,
+                                        enabled = executionState.workoutStarted && !trainingBlocked && !paused,
                                         modifier = Modifier.fillMaxWidth().testTag("complete_set_button"),
                                     ) {
                                         Icon(Icons.Default.Check, contentDescription = null)
@@ -650,7 +681,7 @@ fun SessionScreen(
                                                 },
                                             )
                                         },
-                                        enabled = !loadBlocked && !paused,
+                                        enabled = !trainingBlocked && !paused,
                                         modifier = Modifier.fillMaxWidth().testTag("set_timer_button"),
                                     ) {
                                         Icon(if (setRunning) Icons.Default.Pause else Icons.Default.PlayArrow, contentDescription = null)
@@ -682,7 +713,7 @@ fun SessionScreen(
                                             )
                                             showSetResult = true
                                         },
-                                        enabled = executionState.workoutStarted && !loadBlocked && !paused,
+                                        enabled = executionState.workoutStarted && !trainingBlocked && !paused,
                                         modifier = Modifier.fillMaxWidth().testTag("detailed_set_result_button"),
                                     ) {
                                         Text("Записать подробнее")
@@ -765,7 +796,16 @@ fun SessionScreen(
                                 fontWeight = FontWeight.Bold,
                             )
                             session.actualRpe?.let { Text("Фактический RPE: $it") }
+                            if (session.actualDurationSeconds > 0) {
+                                Text("Фактическое время: ${formatDuration(session.actualDurationSeconds)}")
+                            }
                             if (session.completionNotes.isNotBlank()) Text(session.completionNotes)
+                            if (session.status == SessionStatus.SKIPPED) {
+                                OutlinedButton(
+                                    onClick = { showRestoreSkipped = true },
+                                    modifier = Modifier.fillMaxWidth(),
+                                ) { Text("Вернуть тренировку в план") }
+                            }
                         }
                     }
                 }
@@ -898,6 +938,23 @@ fun SessionScreen(
             dismissButton = { TextButton(onClick = { showPainStop = false }) { Text("Остаться на паузе") } },
         )
     }
+    if (showRestoreSkipped) {
+        AlertDialog(
+            onDismissRequest = { showRestoreSkipped = false },
+            title = { Text("Вернуть тренировку в план?") },
+            text = {
+                Text(
+                    "Она снова станет запланированной. Уже записанные подходы и отметки сохранятся.",
+                )
+            },
+            confirmButton = {
+                Button(onClick = { showRestoreSkipped = false; onRestoreSkipped(session.id) }) {
+                    Text("Вернуть")
+                }
+            },
+            dismissButton = { TextButton(onClick = { showRestoreSkipped = false }) { Text("Отмена") } },
+        )
+    }
     if (showSafetyDetails) {
         AlertDialog(
             onDismissRequest = { showSafetyDetails = false },
@@ -941,6 +998,14 @@ private fun SetResultDialog(
     var pain by remember { mutableStateOf(existing?.pain ?: false) }
     var painNote by remember { mutableStateOf(existing?.painNote.orEmpty()) }
     val timedStage = target.workSeconds != null
+    val parsedReps = reps.toIntOrNull()
+    val parsedLoad = load.toDoubleOrNull()
+    val parsedRir = rir.toIntOrNull()
+    val repsInvalid = !timedStage && reps.isNotBlank() && (parsedReps == null || parsedReps < 0 || parsedReps > 999)
+    val loadInvalid = !timedStage && load.isNotBlank() && (parsedLoad == null || parsedLoad < 0.0 || parsedLoad > 500.0)
+    val rirInvalid = !timedStage && rir.isNotBlank() && (parsedRir == null || parsedRir < 0 || parsedRir > 5)
+    val painNoteInvalid = pain && painNote.isBlank()
+    val resultValid = !repsInvalid && !loadInvalid && !rirInvalid && !painNoteInvalid
     AlertDialog(
         onDismissRequest = onDismiss,
         title = { Text(if (timedStage) "Результат этапа" else "Результат подхода") },
@@ -949,10 +1014,26 @@ private fun SetResultDialog(
                 item { Text("${target.step.title} · ${formatDuration(elapsedSeconds)}") }
                 if (!timedStage) {
                     item {
-                        OutlinedTextField(reps, { reps = it.filter(Char::isDigit) }, label = { Text("Повторения") }, modifier = Modifier.fillMaxWidth())
+                        OutlinedTextField(
+                            reps,
+                            { reps = it.filter(Char::isDigit).take(3) },
+                            label = { Text("Повторения") },
+                            isError = repsInvalid,
+                            supportingText = { if (repsInvalid) Text("Допустимо 0–999") },
+                            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                            modifier = Modifier.fillMaxWidth(),
+                        )
                     }
                     item {
-                        OutlinedTextField(load, { load = it.replace(',', '.').filter { c -> c.isDigit() || c == '.' } }, label = { Text("Вес, кг (необязательно)") }, modifier = Modifier.fillMaxWidth())
+                        OutlinedTextField(
+                            load,
+                            { load = it.replace(',', '.').filter { c -> c.isDigit() || c == '.' } },
+                            label = { Text("Вес, кг (необязательно)") },
+                            isError = loadInvalid,
+                            supportingText = { if (loadInvalid) Text("Допустимо 0–500 кг") },
+                            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
+                            modifier = Modifier.fillMaxWidth(),
+                        )
                     }
                 }
                 item {
@@ -961,7 +1042,15 @@ private fun SetResultDialog(
                 }
                 if (!timedStage) {
                     item {
-                        OutlinedTextField(rir, { rir = it.filter(Char::isDigit).take(1) }, label = { Text("Повторов в запасе, RIR") }, modifier = Modifier.fillMaxWidth())
+                        OutlinedTextField(
+                            rir,
+                            { rir = it.filter(Char::isDigit).take(1) },
+                            label = { Text("Повторов в запасе, RIR") },
+                            isError = rirInvalid,
+                            supportingText = { if (rirInvalid) Text("Допустимо 0–5") },
+                            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                            modifier = Modifier.fillMaxWidth(),
+                        )
                     }
                 }
                 item {
@@ -971,21 +1060,32 @@ private fun SetResultDialog(
                     }
                 }
                 if (pain) item {
-                    OutlinedTextField(painNote, { painNote = it }, label = { Text("Где и при каком движении") }, modifier = Modifier.fillMaxWidth(), minLines = 2)
+                    OutlinedTextField(
+                        painNote,
+                        { painNote = it },
+                        label = { Text("Где и при каком движении") },
+                        isError = painNoteInvalid,
+                        supportingText = { if (painNoteInvalid) Text("Опишите боль, чтобы не потерять важный сигнал") },
+                        modifier = Modifier.fillMaxWidth(),
+                        minLines = 2,
+                    )
                 }
             }
         },
         confirmButton = {
-            Button(onClick = {
-                onConfirm(
-                    reps.toIntOrNull().takeUnless { timedStage },
-                    load.toDoubleOrNull().takeUnless { timedStage },
-                    rpe.toInt(),
-                    rir.toIntOrNull()?.coerceIn(0, 5).takeUnless { timedStage },
-                    pain,
-                    painNote.trim(),
-                )
-            }) {
+            Button(
+                enabled = resultValid,
+                onClick = {
+                    onConfirm(
+                        parsedReps.takeUnless { timedStage },
+                        parsedLoad.takeUnless { timedStage },
+                        rpe.toInt(),
+                        parsedRir.takeUnless { timedStage },
+                        pain,
+                        painNote.trim(),
+                    )
+                },
+            ) {
                 Text("Сохранить")
             }
         },

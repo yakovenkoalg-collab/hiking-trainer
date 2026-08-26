@@ -9,7 +9,9 @@ import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.onAllNodesWithText
+import androidx.compose.ui.test.isToggleable
 import androidx.compose.ui.test.performClick
+import androidx.compose.ui.test.performScrollTo
 import androidx.compose.ui.test.performScrollToNode
 import org.junit.Rule
 import org.junit.Test
@@ -107,7 +109,7 @@ class SessionScreenTest {
                 SessionScreen(
                     padding = PaddingValues(),
                     session = session,
-                    steps = emptyList(),
+                    steps = listOf(ExerciseStep("walk", "Ходьба", "10 минут", "Спокойно", workSeconds = 600)),
                     catalog = emptyList(),
                     stepLogs = emptyList(),
                     setLogs = emptyList(),
@@ -252,6 +254,10 @@ class SessionScreenTest {
         check(composeRule.onAllNodesWithText("Повторения").fetchSemanticsNodes().isEmpty())
         check(composeRule.onAllNodesWithText("Вес, кг (необязательно)").fetchSemanticsNodes().isEmpty())
         check(composeRule.onAllNodesWithText("Повторов в запасе, RIR").fetchSemanticsNodes().isEmpty())
+        composeRule.onNode(isToggleable()).performClick()
+        composeRule.waitForIdle()
+        composeRule.onNodeWithText("Сохранить").assertIsNotEnabled()
+        composeRule.onNodeWithText("Опишите боль", substring = true).assertIsDisplayed()
     }
 
     @Test
@@ -377,6 +383,80 @@ class SessionScreenTest {
             check(savedLog?.elapsedSeconds == 0)
             check(savedLog?.actualReps == 8)
         }
+    }
+
+    @Test
+    fun activeShoulderRestrictionBlocksConflictingPlanAtRuntime() {
+        val session = testSession("shoulder-conflict", "Конфликт плана")
+        composeRule.setContent {
+            MountainFormTheme {
+                SessionScreen(
+                    padding = PaddingValues(),
+                    session = session,
+                    steps = listOf(ExerciseStep("push-up", "Отжимания", "3 × 8", "Без боли", reps = 8)),
+                    catalog = emptyList(),
+                    stepLogs = emptyList(),
+                    setLogs = emptyList(),
+                    shoulderRestrictionActive = true,
+                    loadBlocked = false,
+                    adaptationRequired = false,
+                    readinessRecommendation = "",
+                    readinessReasons = emptyList(),
+                    initialExecutionState = null,
+                    onExecutionStateChanged = {},
+                    onStepCompleted = { _, _, _ -> },
+                    onSaveSetLog = {},
+                    onBack = {},
+                    onEditReadiness = {},
+                    onComplete = { _, _, _, _ -> },
+                    onSkip = { _, _ -> },
+                )
+            }
+        }
+
+        composeRule.onNodeWithTag("start_workout_button").assertIsNotEnabled()
+        composeRule.onNodeWithText("несовместимое с активным ограничением", substring = true)
+            .performScrollTo()
+            .assertIsDisplayed()
+    }
+
+    @Test
+    fun skippedWorkoutCanBeRestoredWithoutLosingRecordedWork() {
+        val session = testSession("restore-skipped", "Вернуть в план").copy(
+            status = ru.yakovenko.mountainform.data.SessionStatus.SKIPPED,
+            completionNotes = "Не успел",
+        )
+        var restored: String? = null
+        composeRule.setContent {
+            MountainFormTheme {
+                SessionScreen(
+                    padding = PaddingValues(),
+                    session = session,
+                    steps = listOf(ExerciseStep("walk", "Ходьба", "10 минут", "Спокойно", workSeconds = 600)),
+                    catalog = emptyList(),
+                    stepLogs = emptyList(),
+                    setLogs = emptyList(),
+                    shoulderRestrictionActive = false,
+                    loadBlocked = false,
+                    adaptationRequired = false,
+                    readinessRecommendation = "",
+                    readinessReasons = emptyList(),
+                    initialExecutionState = null,
+                    onExecutionStateChanged = {},
+                    onStepCompleted = { _, _, _ -> },
+                    onSaveSetLog = {},
+                    onBack = {},
+                    onEditReadiness = {},
+                    onComplete = { _, _, _, _ -> },
+                    onSkip = { _, _ -> },
+                    onRestoreSkipped = { restored = it },
+                )
+            }
+        }
+
+        composeRule.onNodeWithText("Вернуть тренировку в план").performScrollTo().performClick()
+        composeRule.onNodeWithText("Вернуть").performClick()
+        composeRule.runOnIdle { check(restored == session.id) }
     }
 
     private fun testSession(id: String, title: String) = TrainingSessionEntity(

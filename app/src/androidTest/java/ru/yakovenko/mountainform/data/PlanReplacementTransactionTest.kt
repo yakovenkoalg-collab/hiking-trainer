@@ -3,6 +3,8 @@ package ru.yakovenko.mountainform.data
 import androidx.room.Room
 import androidx.test.platform.app.InstrumentationRegistry
 import kotlinx.coroutines.runBlocking
+import kotlinx.serialization.encodeToString
+import kotlinx.serialization.json.Json
 import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -10,6 +12,7 @@ import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Test
+import java.time.LocalDate
 
 class PlanReplacementTransactionTest {
     private lateinit var database: MountainFormDatabase
@@ -82,6 +85,119 @@ class PlanReplacementTransactionTest {
         assertEquals(ActivityLinkStatus.UNLINKED, activity.status)
         assertEquals("revision", dao.getRevisions().single().id)
     }
+
+    @Test
+    fun oneTrainingSessionCannotBeLinkedToTwoActivities() = runBlocking {
+        val target = session("target", SessionStatus.COMPLETED)
+        dao.upsertSession(target)
+        dao.upsertImportedActivities(listOf(activity("first"), activity("second")))
+
+        dao.linkImportedActivity("first", target.id)
+        val error = runCatching { dao.linkImportedActivity("second", target.id) }.exceptionOrNull()
+
+        assertTrue(error is IllegalArgumentException)
+        assertEquals(ActivityLinkStatus.LINKED, dao.getImportedActivity("first")?.status)
+        assertEquals(ActivityLinkStatus.UNLINKED, dao.getImportedActivity("second")?.status)
+    }
+
+    @Test
+    fun skippedTrainingSessionCannotBeLinked() = runBlocking {
+        val skipped = session("skipped", SessionStatus.SKIPPED)
+        dao.upsertSession(skipped)
+        dao.upsertImportedActivity(activity("activity"))
+
+        val error = runCatching { dao.linkImportedActivity("activity", skipped.id) }.exceptionOrNull()
+
+        assertTrue(error is IllegalArgumentException)
+        assertEquals(ActivityLinkStatus.UNLINKED, dao.getImportedActivity("activity")?.status)
+    }
+
+    @Test
+    fun corePracticeMarkCanBeUndone() = runBlocking {
+        val day = LocalDate.now().toEpochDay()
+        dao.upsertPractice(PracticeLogEntity("$day-core-posture", day, "CORE_POSTURE", 10, ""))
+
+        MountainFormRepository(dao).undoCorePractice()
+
+        assertTrue(dao.getPractices().none { it.id == "$day-core-posture" })
+    }
+
+    @Test
+    fun restoringSkippedSessionPreservesSetHistory() = runBlocking {
+        val skipped = session("restore", SessionStatus.SKIPPED).copy(
+            completedAtEpochMillis = 42,
+            actualRpe = 7,
+            actualDurationSeconds = 900,
+            completionNotes = "Пропущена",
+        )
+        dao.upsertSession(skipped)
+        dao.upsertSetLog(SessionSetLogEntity(skipped.id, "step", 1, 1, completed = true))
+
+        MountainFormRepository(dao).restoreSkippedSession(skipped.id)
+
+        val restored = requireNotNull(dao.getSession(skipped.id))
+        assertEquals(SessionStatus.PLANNED, restored.status)
+        assertNull(restored.completedAtEpochMillis)
+        assertNull(restored.actualRpe)
+        assertEquals(0, restored.actualDurationSeconds)
+        assertEquals("", restored.completionNotes)
+        assertTrue(dao.getSetLogs().any { it.sessionId == skipped.id })
+    }
+
+    @Test
+    fun planWithAnEmptyWorkoutIsRejectedBeforeImport() = runBlocking {
+        dao.upsertProfile(
+            UserProfileEntity(
+                age = 41,
+                heightCm = 183,
+                weightKg = 75.0,
+                preferredDays = "вторник, пятница, воскресенье",
+                currentPhase = "BASE",
+                shoulderRestrictionActive = true,
+                kneeObservationActive = true,
+                updatedAtEpochMillis = 1,
+            ),
+        )
+        val raw = Json.encodeToString(
+            PlanEnvelope(
+                planId = "empty",
+                author = "test",
+                reason = "test",
+                generatedAtEpochMillis = 1,
+                sessions = listOf(
+                    PlanSession(
+                        id = "empty-session",
+                        plannedEpochDay = LocalDate.now().toEpochDay(),
+                        title = "Пустая",
+                        type = "RECOVERY",
+                        phase = "BASE",
+                        objective = "test",
+                        durationMinutes = 10,
+                        targetRpe = 2,
+                        steps = emptyList(),
+                    ),
+                ),
+            ),
+        )
+
+        val error = runCatching { MountainFormRepository(dao).previewPlan(raw) }.exceptionOrNull()
+
+        assertTrue(error is IllegalArgumentException)
+        assertTrue(error?.message.orEmpty().contains("хотя бы одно упражнение"))
+    }
+
+    private fun activity(id: String) = ImportedActivityEntity(
+        id = id,
+        sourceRecordId = "source-$id",
+        sourceType = ActivitySourceType.FIT,
+        sourcePackage = "test",
+        title = id,
+        activityType = "RUNNING",
+        startAtEpochMillis = 1,
+        endAtEpochMillis = 2,
+        durationSeconds = 1,
+        importedAtEpochMillis = 3,
+    )
 
     private fun session(id: String, status: String) = TrainingSessionEntity(
         id = id,

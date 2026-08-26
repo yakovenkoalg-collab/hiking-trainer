@@ -53,7 +53,7 @@ class CalendarScreenTest {
 
         composeRule.onNodeWithText("Календарь").assertIsDisplayed()
         composeRule.onNodeWithText("Проверочная тренировка").performScrollTo().assertIsDisplayed()
-        composeRule.onNodeWithText("1 запланировано").performScrollTo().assertIsDisplayed()
+        composeRule.onNodeWithText("1 запланирована").performScrollTo().assertIsDisplayed()
     }
 
     @Test
@@ -86,6 +86,7 @@ class CalendarScreenTest {
         check(composeRule.onAllNodesWithText("Пн").fetchSemanticsNodes().size >= 2)
         check(composeRule.onAllNodesWithText("Вс").fetchSemanticsNodes().size >= 2)
         composeRule.onNodeWithText("Новая дата:", substring = true).assertIsDisplayed()
+        composeRule.onNodeWithText("Выберите другую дату").assertIsDisplayed()
     }
 
     @Test
@@ -114,7 +115,7 @@ class CalendarScreenTest {
             }
         }
 
-        composeRule.onNodeWithText("1 выполнено").performScrollTo().assertIsDisplayed()
+        composeRule.onNodeWithText("1 выполнена").performScrollTo().assertIsDisplayed()
         composeRule.onNodeWithContentDescription("Выполнено").performScrollTo().assertIsDisplayed()
     }
 }

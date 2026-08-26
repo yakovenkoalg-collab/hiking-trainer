@@ -55,7 +55,9 @@ fun TodayScreen(
     state: AppUiState,
     onSaveReadiness: (Int, Int, Int, Int, Int, Int, Boolean, String) -> Unit,
     onOpenSession: (String) -> Unit,
+    onOpenCalendar: () -> Unit = {},
     onCompleteCorePractice: () -> Unit,
+    onUndoCorePractice: () -> Unit = {},
     onShareReviewReport: () -> Unit,
     openReadiness: Boolean = false,
     onReadinessOpened: () -> Unit = {},
@@ -163,7 +165,14 @@ fun TodayScreen(
         }
         item {
             if (session == null) {
-                Card { Text("Следующих тренировок пока нет", Modifier.padding(16.dp)) }
+                Card {
+                    Column(Modifier.fillMaxWidth().padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                        Text("Следующих тренировок пока нет", fontWeight = FontWeight.Bold)
+                        OutlinedButton(onClick = onOpenCalendar, modifier = Modifier.fillMaxWidth()) {
+                            Text("Открыть календарь и обновить план")
+                        }
+                    }
+                }
             } else {
                 Card(colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.primaryContainer)) {
                     Column(
@@ -223,12 +232,7 @@ fun TodayScreen(
                         Text("10 минут · без боли в плече", style = MaterialTheme.typography.bodySmall)
                     }
                     if (doneToday) {
-                        Text(
-                            "Выполнено",
-                            style = MaterialTheme.typography.labelLarge,
-                            color = MaterialTheme.colorScheme.primary,
-                            fontWeight = FontWeight.SemiBold,
-                        )
+                        TextButton(onClick = onUndoCorePractice) { Text("Отменить") }
                     } else {
                         TextButton(onClick = onCompleteCorePractice) {
                             Text("Отметить")

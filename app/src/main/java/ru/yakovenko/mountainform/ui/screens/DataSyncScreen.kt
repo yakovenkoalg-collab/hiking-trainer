@@ -18,6 +18,7 @@ import androidx.compose.material.icons.filled.CloudSync
 import androidx.compose.material.icons.filled.FolderOpen
 import androidx.compose.material.icons.filled.Share
 import androidx.compose.material3.Button
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Card
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
@@ -65,6 +66,9 @@ fun DataSyncScreen(
     val context = LocalContext.current
     val current = settings ?: AppSettingsEntity()
     var showAdvanced by remember { mutableStateOf(false) }
+    var showDisconnectConfirmation by remember { mutableStateOf(false) }
+    val hasSyncStatus = current.lastSyncAtEpochMillis != null ||
+        current.lastSyncMessage.isNotBlank() && current.lastSyncMessage != "Общая папка не выбрана"
     val folderPicker = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocumentTree()) { uri ->
         if (uri != null) {
             runCatching {
@@ -109,7 +113,7 @@ fun DataSyncScreen(
                             Icon(Icons.Default.CloudSync, contentDescription = null)
                             Text("  Синхронизировать")
                         }
-                        TextButton(onClick = onDisconnectYandex, modifier = Modifier.fillMaxWidth()) { Text("Отключить") }
+                        TextButton(onClick = { showDisconnectConfirmation = true }, modifier = Modifier.fillMaxWidth()) { Text("Отключить") }
                     } else {
                         Text(
                             "Для обмена без USB войдите с Яндекс ID.",
@@ -154,11 +158,16 @@ fun DataSyncScreen(
                 }
             }
 
-            if (current.lastSyncMessage.isNotBlank() || current.lastSyncAtEpochMillis != null) {
+            if (hasSyncStatus) {
                 Card {
                     Column(Modifier.fillMaxWidth().padding(14.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                        Text("Последний обмен", fontWeight = FontWeight.Bold)
-                        Text(current.lastSyncMessage, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        Text(
+                            if (current.lastSyncAtEpochMillis == null) "Состояние обмена" else "Последний обмен",
+                            fontWeight = FontWeight.Bold,
+                        )
+                        if (current.lastSyncMessage.isNotBlank()) {
+                            Text(current.lastSyncMessage, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        }
                         current.lastSyncAtEpochMillis?.let {
                             Text(formatSyncTime(it), style = MaterialTheme.typography.bodySmall)
                         }
@@ -217,6 +226,27 @@ fun DataSyncScreen(
                 }
             }
         }
+    }
+
+    if (showDisconnectConfirmation) {
+        AlertDialog(
+            onDismissRequest = { showDisconnectConfirmation = false },
+            title = { Text("Отключить Яндекс Диск?") },
+            text = {
+                Text(
+                    "Автообмен через Яндекс остановится. Локальные данные и уже созданные файлы на Диске не удаляются.",
+                )
+            },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        showDisconnectConfirmation = false
+                        onDisconnectYandex()
+                    },
+                ) { Text("Отключить") }
+            },
+            dismissButton = { TextButton(onClick = { showDisconnectConfirmation = false }) { Text("Отмена") } },
+        )
     }
 }
 

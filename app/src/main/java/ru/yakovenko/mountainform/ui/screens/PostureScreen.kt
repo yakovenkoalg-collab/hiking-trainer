@@ -28,6 +28,7 @@ import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
@@ -45,6 +46,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import ru.yakovenko.mountainform.ui.AppUiState
 import ru.yakovenko.mountainform.ui.components.SectionTitle
+import ru.yakovenko.mountainform.ui.formatEpochDay
 
 @Composable
 @OptIn(ExperimentalMaterial3Api::class)
@@ -99,22 +101,28 @@ fun PostureScreen(
                 )
             }
             item {
-                PhotoCard("Спереди", frontUri) {
-                    photoSlot = 0
-                    picker.launch(arrayOf("image/*"))
-                }
+                PhotoCard(
+                    title = "Спереди",
+                    uri = frontUri,
+                    onPick = { photoSlot = 0; picker.launch(arrayOf("image/*")) },
+                    onClear = { frontUri = null },
+                )
             }
             item {
-                PhotoCard("Сбоку", sideUri) {
-                    photoSlot = 1
-                    picker.launch(arrayOf("image/*"))
-                }
+                PhotoCard(
+                    title = "Сбоку",
+                    uri = sideUri,
+                    onPick = { photoSlot = 1; picker.launch(arrayOf("image/*")) },
+                    onClear = { sideUri = null },
+                )
             }
             item {
-                PhotoCard("Сзади", backUri) {
-                    photoSlot = 2
-                    picker.launch(arrayOf("image/*"))
-                }
+                PhotoCard(
+                    title = "Сзади",
+                    uri = backUri,
+                    onPick = { photoSlot = 2; picker.launch(arrayOf("image/*")) },
+                    onClear = { backUri = null },
+                )
             }
             item { SectionTitle("Самооценка", "1 — выраженная сутулость, 5 — легко сохраняю нейтральную стойку") }
             item {
@@ -147,6 +155,7 @@ fun PostureScreen(
                     Card {
                         Column(Modifier.fillMaxWidth().padding(16.dp)) {
                             Text("Последняя запись", fontWeight = FontWeight.Bold)
+                            Text(formatEpochDay(lastAssessment.epochDay), style = MaterialTheme.typography.bodySmall)
                             Text("Самооценка: ${lastAssessment.selfRating}/5")
                             if (lastAssessment.notes.isNotBlank()) Text(lastAssessment.notes)
                         }
@@ -158,7 +167,7 @@ fun PostureScreen(
 }
 
 @Composable
-private fun PhotoCard(title: String, uri: Uri?, onPick: () -> Unit) {
+private fun PhotoCard(title: String, uri: Uri?, onPick: () -> Unit, onClear: () -> Unit) {
     Card {
         Column(Modifier.fillMaxWidth().padding(14.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
             Text(title, fontWeight = FontWeight.Bold)
@@ -174,6 +183,9 @@ private fun PhotoCard(title: String, uri: Uri?, onPick: () -> Unit) {
             }
             OutlinedButton(onClick = onPick, modifier = Modifier.fillMaxWidth()) {
                 Text(if (uri == null) "Выбрать фото" else "Заменить фото")
+            }
+            if (uri != null) {
+                TextButton(onClick = onClear, modifier = Modifier.fillMaxWidth()) { Text("Убрать фото") }
             }
         }
     }
