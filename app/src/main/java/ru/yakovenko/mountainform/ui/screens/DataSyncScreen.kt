@@ -30,6 +30,10 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
@@ -60,6 +64,7 @@ fun DataSyncScreen(
 ) {
     val context = LocalContext.current
     val current = settings ?: AppSettingsEntity()
+    var showAdvanced by remember { mutableStateOf(false) }
     val folderPicker = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocumentTree()) { uri ->
         if (uri != null) {
             runCatching {
@@ -92,62 +97,22 @@ fun DataSyncScreen(
                 .fillMaxSize()
                 .padding(padding)
                 .verticalScroll(rememberScrollState())
-                .padding(horizontal = 20.dp, vertical = 20.dp),
-            verticalArrangement = Arrangement.spacedBy(14.dp),
+                .padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp),
         ) {
-            Text(
-                "Для обмена без USB используйте Яндекс Диск. Общая папка Android остаётся локальным запасным вариантом.",
-                style = MaterialTheme.typography.bodyMedium,
-            )
             Card {
-                Column(Modifier.fillMaxWidth().padding(18.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                    Icon(Icons.Default.FolderOpen, contentDescription = null, tint = MaterialTheme.colorScheme.primary)
-                    Text("Общая папка (запасной вариант)", fontWeight = FontWeight.Bold)
-                    Text(
-                        current.sharedFolderName ?: "Папка не выбрана",
-                        style = MaterialTheme.typography.titleMedium,
-                    )
-                    OutlinedButton(onClick = { folderPicker.launch(current.sharedFolderUri?.let(Uri::parse)) }, modifier = Modifier.fillMaxWidth()) {
-                        Text(if (current.sharedFolderUri == null) "Выбрать папку" else "Сменить папку")
-                    }
-                    if (current.sharedFolderUri != null) {
-                        OutlinedButton(onClick = onSync, modifier = Modifier.fillMaxWidth()) {
-                            Icon(Icons.Default.CloudSync, contentDescription = null)
-                            Text("  Синхронизировать общую папку")
-                        }
-                    }
-                }
-            }
-
-            Card {
-                Column(Modifier.fillMaxWidth().padding(18.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                Column(Modifier.fillMaxWidth().padding(14.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                     Text("Яндекс Диск", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
                     if (yandexConnected) {
-                        Text("Подключено · ${current.yandexAccountLabel.ifBlank { "OAuth" }}", color = MaterialTheme.colorScheme.primary)
-                        Text(
-                            if (current.yandexRootPath.startsWith("app:")) {
-                                "Папка приложения на Яндекс Диске"
-                            } else {
-                                current.yandexRootPath
-                            },
-                            style = MaterialTheme.typography.bodySmall,
-                        )
+                        Text("Подключено · ${current.yandexAccountLabel.ifBlank { "Яндекс ID" }}", color = MaterialTheme.colorScheme.primary)
                         Button(onClick = onSyncYandex, modifier = Modifier.fillMaxWidth()) {
                             Icon(Icons.Default.CloudSync, contentDescription = null)
                             Text("  Синхронизировать")
                         }
-                        OutlinedButton(onClick = onCreateYandexBackup, modifier = Modifier.fillMaxWidth()) {
-                            Icon(Icons.Default.Backup, contentDescription = null)
-                            Text("  Копия на Яндекс Диске")
-                        }
                         TextButton(onClick = onDisconnectYandex, modifier = Modifier.fillMaxWidth()) { Text("Отключить") }
                     } else {
                         Text(
-                            "Войдите с сохранённым аккаунтом Яндекса. Доступ к Диску появится только после вашего подтверждения.",
-                            style = MaterialTheme.typography.bodySmall,
-                        )
-                        Text(
-                            "Файлы будут храниться только в папке приложения «Горная форма» на Яндекс Диске.",
+                            "Для обмена без USB войдите с Яндекс ID.",
                             style = MaterialTheme.typography.bodySmall,
                         )
                         Button(
@@ -155,21 +120,15 @@ fun DataSyncScreen(
                             enabled = yandexLoginConfigured,
                             modifier = Modifier.fillMaxWidth(),
                         ) { Text("Войти с Яндекс ID") }
-                        Text(
-                            if (yandexLoginConfigured) {
-                                "Токен не нужно копировать: после входа он сохраняется в защищённом хранилище Android."
-                            } else {
-                                "В этой сборке ещё не указан Client ID Android-приложения в Яндекс OAuth."
-                            },
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        )
+                        if (!yandexLoginConfigured) {
+                            Text("В этой сборке не настроен вход Яндекс ID", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.error)
+                        }
                     }
                 }
             }
 
             Card {
-                Column(Modifier.fillMaxWidth().padding(18.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                Column(Modifier.fillMaxWidth().padding(14.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                     androidx.compose.foundation.layout.Row(
                         Modifier.fillMaxWidth(),
                         horizontalArrangement = Arrangement.SpaceBetween,
@@ -177,7 +136,7 @@ fun DataSyncScreen(
                     ) {
                         Column(Modifier.weight(1f)) {
                             Text("Автообмен", fontWeight = FontWeight.Bold)
-                            Text("Обновлять отчёт после записей", style = MaterialTheme.typography.bodySmall)
+                            Text("Обновлять после записей", style = MaterialTheme.typography.bodySmall)
                         }
                         Switch(
                             checked = current.automaticSync,
@@ -195,45 +154,68 @@ fun DataSyncScreen(
                 }
             }
 
-            Card {
-                Column(Modifier.fillMaxWidth().padding(18.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                    Text("Состояние обмена", fontWeight = FontWeight.Bold)
-                    Text(current.lastSyncMessage, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                    current.lastSyncAtEpochMillis?.let {
-                        Text("Последний обмен: ${formatSyncTime(it)}", style = MaterialTheme.typography.bodySmall)
+            if (current.lastSyncMessage.isNotBlank() || current.lastSyncAtEpochMillis != null) {
+                Card {
+                    Column(Modifier.fillMaxWidth().padding(14.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                        Text("Последний обмен", fontWeight = FontWeight.Bold)
+                        Text(current.lastSyncMessage, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        current.lastSyncAtEpochMillis?.let {
+                            Text(formatSyncTime(it), style = MaterialTheme.typography.bodySmall)
+                        }
                     }
                 }
             }
 
             OutlinedButton(onClick = onShareReport, modifier = Modifier.fillMaxWidth()) {
                 Icon(Icons.Default.Share, contentDescription = null)
-                Text("  Поделиться отчётом для корректировки плана")
+                Text("  Поделиться отчётом")
             }
 
-            Card {
-                Column(Modifier.fillMaxWidth().padding(18.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                    Text("Резервные копии", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
-                    OutlinedButton(
-                        onClick = onCreateBackup,
-                        enabled = current.sharedFolderUri != null,
-                        modifier = Modifier.fillMaxWidth(),
-                    ) {
-                        Icon(Icons.Default.Backup, contentDescription = null)
-                        Text("  Копия в общую папку")
+            TextButton(onClick = { showAdvanced = !showAdvanced }, modifier = Modifier.fillMaxWidth()) {
+                Text(if (showAdvanced) "Скрыть дополнительные действия" else "Копии и общая папка")
+            }
+
+            if (showAdvanced) {
+                Card {
+                    Column(Modifier.fillMaxWidth().padding(14.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                        Icon(Icons.Default.FolderOpen, contentDescription = null, tint = MaterialTheme.colorScheme.primary)
+                        Text("Общая папка", fontWeight = FontWeight.Bold)
+                        Text(current.sharedFolderName ?: "Папка не выбрана", style = MaterialTheme.typography.bodySmall)
+                        OutlinedButton(onClick = { folderPicker.launch(current.sharedFolderUri?.let(Uri::parse)) }, modifier = Modifier.fillMaxWidth()) {
+                            Text(if (current.sharedFolderUri == null) "Выбрать папку" else "Сменить папку")
+                        }
+                        if (current.sharedFolderUri != null) {
+                            OutlinedButton(onClick = onSync, modifier = Modifier.fillMaxWidth()) {
+                                Icon(Icons.Default.CloudSync, contentDescription = null)
+                                Text("  Синхронизировать папку")
+                            }
+                        }
                     }
-                    OutlinedButton(
-                        onClick = { backupPicker.launch(arrayOf("application/json", "text/plain")) },
-                        modifier = Modifier.fillMaxWidth(),
-                    ) { Text("Восстановить из JSON") }
+                }
+                Card {
+                    Column(Modifier.fillMaxWidth().padding(14.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                        Text("Резервные копии", fontWeight = FontWeight.Bold)
+                        if (yandexConnected) {
+                            OutlinedButton(onClick = onCreateYandexBackup, modifier = Modifier.fillMaxWidth()) {
+                                Icon(Icons.Default.Backup, contentDescription = null)
+                                Text("  Копия на Яндекс Диске")
+                            }
+                        }
+                        OutlinedButton(onClick = onCreateBackup, enabled = current.sharedFolderUri != null, modifier = Modifier.fillMaxWidth()) {
+                            Icon(Icons.Default.Backup, contentDescription = null)
+                            Text("  Копия в общую папку")
+                        }
+                        OutlinedButton(onClick = { backupPicker.launch(arrayOf("application/json", "text/plain")) }, modifier = Modifier.fillMaxWidth()) {
+                            Text("Восстановить из файла")
+                        }
+                        Text(
+                            "Отчёты содержат данные о самочувствии. Фото осанки и токен Яндекса не выгружаются.",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
                 }
             }
-
-            Text(
-                "Системная папка остаётся запасным вариантом. Для обмена без USB используйте Яндекс Диск. " +
-                    "Отчёты содержат данные о самочувствии; фото осанки и облачный токен не выгружаются.",
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
         }
     }
 }

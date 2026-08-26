@@ -29,7 +29,6 @@ import ru.yakovenko.mountainform.data.SessionStatus
 import ru.yakovenko.mountainform.health.HealthSummary
 import ru.yakovenko.mountainform.ui.AppUiState
 import ru.yakovenko.mountainform.ui.components.MetricCard
-import ru.yakovenko.mountainform.ui.components.SectionTitle
 import ru.yakovenko.mountainform.ui.oneDecimal
 import java.time.LocalDate
 
@@ -50,78 +49,92 @@ fun ProgressScreen(
     val completion = if (planned == 0) 0f else completed.toFloat() / planned
     val practices = state.practices.count { it.epochDay in weekStart..today }
     val latestBody = state.bodyMetrics.firstOrNull()
+    val healthMetrics = buildList {
+        if (healthSummary.workouts > 0) add("тренировок" to healthSummary.workouts.toString())
+        if (healthSummary.distanceKm > 0) add("дистанция" to "${healthSummary.distanceKm.oneDecimal()} км")
+        if (healthSummary.elevationMeters > 0) add("набор" to "${healthSummary.elevationMeters.toInt()} м")
+        if (healthSummary.steps > 0) add("шаги" to healthSummary.steps.toString())
+        healthSummary.latestSleepHours?.let { add("последний сон" to "${it.oneDecimal()} ч") }
+    }
 
     LazyColumn(
         modifier = Modifier.fillMaxSize().padding(padding),
-        contentPadding = PaddingValues(20.dp),
-        verticalArrangement = Arrangement.spacedBy(16.dp),
+        contentPadding = PaddingValues(16.dp),
+        verticalArrangement = Arrangement.spacedBy(12.dp),
     ) {
-        item { SectionTitle("Прогресс", "Одна нагрузка для бега, гор и силовой работы") }
+        item { Text("Прогресс", style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.Bold) }
         item {
             Card {
-                Column(Modifier.fillMaxWidth().padding(18.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                        Text("Выполнение недели", fontWeight = FontWeight.Bold)
-                        Text("$completed из $planned")
+                Column(Modifier.fillMaxWidth().padding(14.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    if (planned == 0) {
+                        Text("Эта неделя", fontWeight = FontWeight.Bold)
+                        Text("Тренировок пока нет", style = MaterialTheme.typography.bodySmall)
+                    } else {
+                        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                            Text("Выполнение недели", fontWeight = FontWeight.Bold)
+                            Text("$completed из $planned")
+                        }
+                        LinearProgressIndicator(progress = { completion }, modifier = Modifier.fillMaxWidth())
                     }
-                    LinearProgressIndicator(progress = { completion }, modifier = Modifier.fillMaxWidth())
-                    Text(
-                        if (completion >= 0.8f) "Стабильность важнее добавления объёма" else "Сначала закрепляем регулярность",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    )
                 }
             }
         }
-        item {
-            Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                MetricCard("core / осанка за 7 дней", "$practices × 10 мин", Modifier.weight(1f))
-                MetricCard("VO₂max, исходный", "42", Modifier.weight(1f))
-            }
-        }
-        item { SectionTitle("Garmin за ${healthSummary.windowDays} дней") }
         item {
             val unlinked = state.importedActivities.count { it.status == ru.yakovenko.mountainform.data.ActivityLinkStatus.UNLINKED }
             Card(onClick = onOpenActivities) {
-                Column(Modifier.fillMaxWidth().padding(18.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                    Text("Фактические тренировки", fontWeight = FontWeight.Bold)
+                Column(Modifier.fillMaxWidth().padding(14.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                    Text("Garmin · ${healthSummary.windowDays} дней", fontWeight = FontWeight.Bold)
                     Text(
-                        if (unlinked > 0) "$unlinked активностей ожидают связи с планом" else "Открыть активности Garmin и связи с планом",
+                        when {
+                            unlinked > 0 -> "$unlinked тренировок нужно проверить"
+                            healthSummary.hasAnyData -> "Данные получены"
+                            else -> "Тренировок пока нет"
+                        },
                         color = if (unlinked > 0) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
+                        style = MaterialTheme.typography.bodySmall,
                     )
                 }
             }
         }
         item {
+            if (practices > 0) {
+                MetricCard("core и осанка за 7 дней", "$practices × 10 мин", Modifier.fillMaxWidth())
+            } else {
+                Card {
+                    Column(Modifier.fillMaxWidth().padding(14.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                        Text("Core и осанка", fontWeight = FontWeight.Bold)
+                        Text("За 7 дней пока нет отметок", style = MaterialTheme.typography.bodySmall)
+                    }
+                }
+            }
+        }
+        items(healthMetrics.chunked(2).size) { rowIndex ->
+            val row = healthMetrics.chunked(2)[rowIndex]
             Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                MetricCard("тренировок", healthSummary.workouts.toString(), Modifier.weight(1f))
-                MetricCard("дистанция", "${healthSummary.distanceKm.oneDecimal()} км", Modifier.weight(1f))
+                row.forEach { (label, value) ->
+                    MetricCard(label, value, Modifier.weight(1f))
+                }
+                if (row.size == 1) androidx.compose.foundation.layout.Spacer(Modifier.weight(1f))
+            }
+        }
+        if (latestBody != null) {
+            item {
+                Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                    MetricCard("вес", latestBody.weightKg?.let { "${it.oneDecimal()} кг" } ?: "—", Modifier.weight(1f))
+                    MetricCard("талия", latestBody.waistCm?.let { "${it.oneDecimal()} см" } ?: "—", Modifier.weight(1f))
+                }
             }
         }
         item {
-            Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                MetricCard("набор", "${healthSummary.elevationMeters.toInt()} м", Modifier.weight(1f))
-                MetricCard("шаги", healthSummary.steps.toString(), Modifier.weight(1f))
-            }
-        }
-        item { SectionTitle("Тело и питание") }
-        item {
-            Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                MetricCard("вес", latestBody?.weightKg?.let { "${it.oneDecimal()} кг" } ?: "—", Modifier.weight(1f))
-                MetricCard("талия", latestBody?.waistCm?.let { "${it.oneDecimal()} см" } ?: "—", Modifier.weight(1f))
-            }
-        }
-        item {
-            Button(onClick = { showBodyMetric = true }, modifier = Modifier.fillMaxWidth()) {
-                Text("Записать вес, талию и питание")
+            TextButton(onClick = { showBodyMetric = true }, modifier = Modifier.fillMaxWidth()) {
+                Text(if (latestBody == null) "Добавить показатели тела" else "Обновить показатели тела")
             }
         }
         item {
             Card {
-                Column(Modifier.fillMaxWidth().padding(18.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    Text("Беговая контрольная точка", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
-                    Text("После 8–12 недель регулярного бега сравним длинную пробежку, недельный объём и восстановление.")
-                    Text("Решение: оставить 21,1 км или переходить к 42,2 км", color = MaterialTheme.colorScheme.primary, fontWeight = FontWeight.SemiBold)
+                Column(Modifier.fillMaxWidth().padding(14.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                    Text("Беговая цель", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+                    Text("После 8–12 недель выберем: 21,1 или 42,2 км", style = MaterialTheme.typography.bodySmall)
                 }
             }
         }

@@ -74,8 +74,8 @@ class SessionScreenTest {
             }
         }
 
-        composeRule.onNodeWithText("Не начата · RPE 5").assertIsDisplayed()
-        composeRule.onNodeWithText("Обзор тренировки").assertIsDisplayed()
+        composeRule.onNodeWithText("60 мин · RPE 5").assertIsDisplayed()
+        composeRule.onNodeWithText("План тренировки").assertIsDisplayed()
         composeRule.onNodeWithTag("start_workout_button").performClick()
         val sessionContent = composeRule.onNodeWithTag("session_content")
         sessionContent.performScrollToNode(hasTestTag("set_timer_button"))

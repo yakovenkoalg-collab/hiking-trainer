@@ -11,6 +11,7 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowForward
 import androidx.compose.material.icons.automirrored.filled.DirectionsRun
+import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.FitnessCenter
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
@@ -38,10 +39,9 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import ru.yakovenko.mountainform.data.GoalType
+import ru.yakovenko.mountainform.domain.ReadinessLevel
 import ru.yakovenko.mountainform.ui.AppUiState
 import ru.yakovenko.mountainform.ui.components.ReadinessPill
-import ru.yakovenko.mountainform.ui.components.SafetyBanner
-import ru.yakovenko.mountainform.ui.components.SectionTitle
 import ru.yakovenko.mountainform.ui.formatEpochDay
 
 @Composable
@@ -56,8 +56,12 @@ fun TodayScreen(
     onReadinessOpened: () -> Unit = {},
 ) {
     var showCheck by remember { mutableStateOf(false) }
+    var showShoulderDetails by remember { mutableStateOf(false) }
     val decision = state.readinessDecision
     val session = state.nextSession
+    val doneToday = state.practices.any {
+        it.epochDay == java.time.LocalDate.now().toEpochDay() && it.type == "CORE_POSTURE"
+    }
 
     LaunchedEffect(openReadiness) {
         if (openReadiness) {
@@ -68,8 +72,8 @@ fun TodayScreen(
 
     LazyColumn(
         modifier = Modifier.fillMaxSize().padding(padding),
-        contentPadding = PaddingValues(20.dp),
-        verticalArrangement = Arrangement.spacedBy(16.dp),
+        contentPadding = PaddingValues(16.dp),
+        verticalArrangement = Arrangement.spacedBy(12.dp),
     ) {
         item {
             Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
@@ -80,50 +84,60 @@ fun TodayScreen(
                 )
             }
         }
-        if (state.profile?.shoulderRestrictionActive == true) {
-            item {
-                SafetyBanner(
-                    "Активное ограничение: резкая боль в левом плече при отведении. " +
-                        "Не выполнять болезненные движения, жимы над головой, подтягивания и брусья до оценки специалистом.",
-                )
-            }
-        }
         item {
             Card(colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.primaryContainer)) {
                 Column(
-                    Modifier.fillMaxWidth().padding(18.dp),
-                    verticalArrangement = Arrangement.spacedBy(12.dp),
+                    Modifier.fillMaxWidth().padding(horizontal = 14.dp, vertical = 10.dp),
+                    verticalArrangement = Arrangement.spacedBy(6.dp),
                 ) {
-                    Text(
-                        "Готовность сегодня",
-                        style = MaterialTheme.typography.titleMedium,
-                        fontWeight = FontWeight.Bold,
-                    )
-                    ReadinessPill(decision.level, decision.title)
-                    if (decision.reasons.isNotEmpty()) {
-                        Text(
-                            "Учтено: ${decision.reasons.joinToString("; ")}",
-                            style = MaterialTheme.typography.bodyMedium,
-                            fontWeight = FontWeight.SemiBold,
+                    Row(
+                        Modifier.fillMaxWidth(),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    ) {
+                        Text("Готовность", fontWeight = FontWeight.Bold, modifier = Modifier.weight(1f))
+                        ReadinessPill(
+                            decision.level,
+                            if (state.todayCheck == null) "Не отмечена" else decision.title,
                         )
+                        TextButton(onClick = { showCheck = true }) {
+                            Text(if (state.todayCheck == null) "Отметить" else "Изменить")
+                        }
                     }
-                    Text(decision.recommendation, style = MaterialTheme.typography.bodyMedium)
-                    OutlinedButton(onClick = { showCheck = true }, modifier = Modifier.fillMaxWidth()) {
-                        Text(if (state.todayCheck == null) "Отметить состояние" else "Обновить состояние")
+                    if (decision.level != ReadinessLevel.GREEN) {
+                        Text(
+                            decision.recommendation,
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            maxLines = 2,
+                        )
                     }
                 }
             }
         }
-        item { SectionTitle("Следующая тренировка") }
+        if (state.profile?.shoulderRestrictionActive == true) {
+            item {
+                Card(colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.errorContainer.copy(alpha = 0.45f))) {
+                    Row(
+                        Modifier.fillMaxWidth().padding(horizontal = 14.dp, vertical = 8.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        Text("Плечо: ограничение активно", fontWeight = FontWeight.SemiBold, modifier = Modifier.weight(1f))
+                        TextButton(onClick = { showShoulderDetails = true }) { Text("Подробнее") }
+                    }
+                }
+            }
+        }
         item {
             if (session == null) {
-                Card { Text("Запланированных тренировок пока нет", Modifier.padding(18.dp)) }
+                Card { Text("Следующих тренировок пока нет", Modifier.padding(16.dp)) }
             } else {
                 Card(onClick = { onOpenSession(session.id) }) {
                     Column(
-                        Modifier.fillMaxWidth().padding(18.dp),
-                        verticalArrangement = Arrangement.spacedBy(10.dp),
+                        Modifier.fillMaxWidth().padding(16.dp),
+                        verticalArrangement = Arrangement.spacedBy(8.dp),
                     ) {
+                        Text("Следующая тренировка", style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.primary)
                         Row(horizontalArrangement = Arrangement.spacedBy(10.dp), verticalAlignment = Alignment.CenterVertically) {
                             Icon(
                                 if (session.type == "RUN") Icons.AutoMirrored.Filled.DirectionsRun else Icons.Default.FitnessCenter,
@@ -136,50 +150,51 @@ fun TodayScreen(
                             }
                             Icon(Icons.AutoMirrored.Filled.ArrowForward, contentDescription = null)
                         }
-                        Text(session.objective, style = MaterialTheme.typography.bodyMedium)
                         Text("${session.durationMinutes} мин · целевой RPE ${session.targetRpe}", style = MaterialTheme.typography.labelLarge)
                     }
                 }
             }
         }
         state.reviewCheckpoints.firstOrNull { it.status != ru.yakovenko.mountainform.data.ReviewStatus.RESOLVED }?.let { checkpoint ->
-            item { SectionTitle("Контрольная точка плана") }
             item {
                 Card(colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.secondaryContainer)) {
-                    Column(Modifier.fillMaxWidth().padding(18.dp), verticalArrangement = Arrangement.spacedBy(9.dp)) {
-                        Text(checkpoint.reason, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
-                        Text("Сформируйте отчёт, отправьте его в этот чат и импортируйте предложенный JSON только после просмотра изменений.")
+                    Column(Modifier.fillMaxWidth().padding(14.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                        Text("Пора обновить план", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+                        Text(checkpoint.reason, style = MaterialTheme.typography.bodySmall, maxLines = 2)
                         Button(onClick = onShareReviewReport, modifier = Modifier.fillMaxWidth()) {
-                            Text(if (checkpoint.status == ru.yakovenko.mountainform.data.ReviewStatus.EXPORTED) "Поделиться отчётом снова" else "Сформировать и поделиться")
+                            Text(if (checkpoint.status == ru.yakovenko.mountainform.data.ReviewStatus.EXPORTED) "Поделиться снова" else "Поделиться отчётом")
                         }
                     }
                 }
             }
         }
-        item { SectionTitle("Core и осанка", "Короткая практика не считается отдельной тренировкой") }
         item {
             Card {
-                Column(Modifier.fillMaxWidth().padding(18.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    Text("10 минут: контроль корпуса", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
-                    Text("Дыхание и положение рёбер · контроль таза · мягкая подвижность грудного отдела. Только без боли в плече.")
-                    Text("Рекомендуется 3–4 раза в неделю", style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.primary)
-                    val doneToday = state.practices.any { it.epochDay == java.time.LocalDate.now().toEpochDay() && it.type == "CORE_POSTURE" }
-                    OutlinedButton(
-                        onClick = onCompleteCorePractice,
-                        enabled = !doneToday,
-                        modifier = Modifier.fillMaxWidth(),
-                    ) { Text(if (doneToday) "Сегодня выполнено" else "Отметить 10 минут") }
+                Row(
+                    Modifier.fillMaxWidth().padding(14.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(10.dp),
+                ) {
+                    if (doneToday) {
+                        Icon(Icons.Default.CheckCircle, contentDescription = null, tint = MaterialTheme.colorScheme.primary)
+                    }
+                    Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                        Text("Core и осанка", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+                        Text("10 минут · без боли в плече", style = MaterialTheme.typography.bodySmall)
+                    }
+                    OutlinedButton(onClick = onCompleteCorePractice, enabled = !doneToday) {
+                        Text(if (doneToday) "Готово" else "Отметить")
+                    }
                 }
             }
         }
         state.goals.firstOrNull { it.type == GoalType.RUNNING }?.let { goal ->
-            item { SectionTitle("Весенняя беговая цель") }
             item {
                 Card(colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.tertiaryContainer)) {
-                    Column(Modifier.fillMaxWidth().padding(18.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Column(Modifier.fillMaxWidth().padding(14.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                        Text("Весенняя цель", style = MaterialTheme.typography.labelLarge)
                         Text(goal.title, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
-                        Text("Базовый вариант — полумарафон. Марафон рассматриваем после 8–12 недель устойчивого бегового объёма.")
-                        Text("Сейчас: диагностика лёгкого бега", style = MaterialTheme.typography.labelLarge)
+                        Text("Сейчас: лёгкий бег и набор объёма", style = MaterialTheme.typography.bodySmall)
                     }
                 }
             }
@@ -194,6 +209,19 @@ fun TodayScreen(
                 onSaveReadiness(sleep, energy, fatigue, soreness, shoulder, knee, illness, notes)
                 showCheck = false
             },
+        )
+    }
+    if (showShoulderDetails) {
+        AlertDialog(
+            onDismissRequest = { showShoulderDetails = false },
+            title = { Text("Ограничение для плеча") },
+            text = {
+                Text(
+                    "Работайте только в безболезненном диапазоне. Не выполняйте болезненные движения, " +
+                        "жимы над головой, подтягивания и брусья до повторной оценки специалистом.",
+                )
+            },
+            confirmButton = { TextButton(onClick = { showShoulderDetails = false }) { Text("Понятно") } },
         )
     }
 }

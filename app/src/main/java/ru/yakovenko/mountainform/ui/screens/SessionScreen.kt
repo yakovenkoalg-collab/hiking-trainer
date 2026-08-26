@@ -32,6 +32,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Slider
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -50,6 +51,7 @@ import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import kotlinx.coroutines.delay
 import kotlinx.serialization.json.Json
@@ -126,6 +128,8 @@ fun SessionScreen(
     var showSetResult by remember { mutableStateOf(false) }
     var editResultOnly by remember { mutableStateOf(false) }
     var showResetTimerConfirm by remember { mutableStateOf(false) }
+    var showPlanDetails by remember(session.id) { mutableStateOf(false) }
+    var showSafetyDetails by remember(session.id) { mutableStateOf(false) }
     var showOverview by remember(session.id) {
         mutableStateOf(session.status == SessionStatus.PLANNED && initialExecutionState?.workoutStarted != true)
     }
@@ -148,6 +152,7 @@ fun SessionScreen(
             it.stepId == current.step.id && it.roundIndex == current.roundIndex && it.setIndex == current.setIndex
         }
     }
+    var showTechnique by remember(session.id, targetIndex) { mutableStateOf(false) }
 
     fun persistExecution(next: WorkoutExecutionState) {
         executionState = next
@@ -316,6 +321,20 @@ fun SessionScreen(
         )
     }
 
+    fun startOrResumeWorkout() {
+        if (!executionState.workoutStarted) {
+            val now = System.currentTimeMillis()
+            persistExecution(
+                executionState.snapshotAt(now).copy(
+                    workoutStarted = true,
+                    paused = false,
+                    workoutTickStartedAtEpochMillis = now,
+                ),
+            )
+        }
+        showOverview = false
+    }
+
     LaunchedEffect(
         session.id,
         executionState.workoutStarted,
@@ -351,7 +370,7 @@ fun SessionScreen(
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text(session.title, maxLines = 1) },
+                title = { Text(session.title, maxLines = 1, overflow = TextOverflow.Ellipsis) },
                 navigationIcon = {
                     IconButton(onClick = onBack) {
                         Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Назад")
@@ -359,44 +378,54 @@ fun SessionScreen(
                 },
             )
         },
+        bottomBar = {
+            if (showOverview && session.status == SessionStatus.PLANNED) {
+                Surface(tonalElevation = 3.dp) {
+                    Button(
+                        onClick = ::startOrResumeWorkout,
+                        enabled = !loadBlocked,
+                        modifier = Modifier.fillMaxWidth().padding(16.dp).testTag("start_workout_button"),
+                    ) {
+                        Icon(Icons.Default.PlayArrow, contentDescription = null)
+                        Text(if (executionState.workoutStarted) "  Продолжить" else "  Начать тренировку")
+                    }
+                }
+            }
+        },
     ) { innerPadding ->
         LazyColumn(
             modifier = Modifier.fillMaxSize().padding(innerPadding).testTag("session_content"),
-            contentPadding = PaddingValues(20.dp),
-            verticalArrangement = Arrangement.spacedBy(14.dp),
+            contentPadding = PaddingValues(16.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp),
         ) {
             item {
-                Column(verticalArrangement = Arrangement.spacedBy(7.dp)) {
+                Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
                     Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
                         Text(formatEpochDay(session.plannedEpochDay), color = MaterialTheme.colorScheme.primary)
                         Text(
                             if (executionState.workoutStarted) {
                                 "${formatDuration(workoutSeconds)} · RPE ${session.targetRpe}"
                             } else {
-                                "Не начата · RPE ${session.targetRpe}"
+                                "${session.durationMinutes} мин · RPE ${session.targetRpe}"
                             },
                         )
                     }
-                    Text(session.objective, style = MaterialTheme.typography.bodyMedium)
                     LinearProgressIndicator(
                         progress = { if (targets.isEmpty()) 0f else completedCount.toFloat() / targets.size },
                         modifier = Modifier.fillMaxWidth(),
                     )
-                    Text("Упражнений: ${steps.size} · этапов: ${targets.size}", style = MaterialTheme.typography.labelMedium)
-                    Text("Этапов выполнено: $completedCount из ${targets.size}", style = MaterialTheme.typography.labelMedium)
-                    if (session.status == SessionStatus.PLANNED && !executionState.workoutStarted) {
-                        Text(
-                            "Сначала посмотрите весь план. Таймер отдельного упражнения запускается только по вашей команде.",
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        )
-                    } else if (session.status == SessionStatus.PLANNED) {
-                        OutlinedButton(
+                    Text(
+                        if (executionState.workoutStarted) "$completedCount из ${targets.size} этапов" else "${steps.size} упражнений · ${targets.size} этапов",
+                        style = MaterialTheme.typography.labelMedium,
+                    )
+                    if (session.status == SessionStatus.PLANNED && executionState.workoutStarted) {
+                        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                            OutlinedButton(
                             onClick = { showOverview = !showOverview },
-                            modifier = Modifier.fillMaxWidth().testTag("workout_overview_button"),
+                                modifier = Modifier.weight(1f).testTag("workout_overview_button"),
                         ) {
                             Icon(Icons.AutoMirrored.Filled.List, contentDescription = null)
-                            Text(if (showOverview) "  Вернуться к тренировке" else "  Весь план")
+                                Text(if (showOverview) "  К упражнению" else "  Весь план")
                         }
                         OutlinedButton(
                             onClick = {
@@ -419,20 +448,16 @@ fun SessionScreen(
                                 )
                             },
                             enabled = !(paused && loadBlocked),
-                            modifier = Modifier.fillMaxWidth(),
+                                modifier = Modifier.weight(1f),
                         ) {
                             Icon(if (paused) Icons.Default.PlayArrow else Icons.Default.Pause, contentDescription = null)
-                            Text(if (paused) "  Продолжить тренировку" else "  Пауза")
+                                Text(if (paused) "  Продолжить" else "  Пауза")
+                            }
                         }
                     }
                 }
             }
 
-            if (shoulderRestrictionActive) {
-                item {
-                    SafetyBanner("Плечо: только безболезненный диапазон. Не добавляйте подтягивания, брусья и движения над головой.")
-                }
-            }
             if (loadBlocked) {
                 item {
                     Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
@@ -448,13 +473,28 @@ fun SessionScreen(
                             onClick = onEditReadiness,
                             modifier = Modifier.fillMaxWidth().testTag("edit_readiness_button"),
                         ) {
-                            Text("Изменить сегодняшнюю оценку")
+                            Text("Изменить состояние")
                         }
                     }
                 }
-            } else if (adaptationRequired) {
+            } else if (shoulderRestrictionActive || adaptationRequired) {
                 item {
-                    SafetyBanner("Сегодня нужна адаптация. $readinessRecommendation Приложение не заменяет упражнение автоматически.")
+                    Card {
+                        Row(
+                            Modifier.fillMaxWidth().padding(horizontal = 14.dp, vertical = 7.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                        ) {
+                            Text(
+                                when {
+                                    adaptationRequired -> "Сегодня снизить нагрузку"
+                                    else -> "Плечо: ограничение активно"
+                                },
+                                fontWeight = FontWeight.SemiBold,
+                                modifier = Modifier.weight(1f),
+                            )
+                            TextButton(onClick = { showSafetyDetails = true }) { Text("Подробнее") }
+                        }
+                    }
                 }
             }
 
@@ -462,53 +502,37 @@ fun SessionScreen(
                 item {
                     Card {
                         Column(
-                            Modifier.fillMaxWidth().padding(18.dp),
-                            verticalArrangement = Arrangement.spacedBy(12.dp),
+                            Modifier.fillMaxWidth().padding(16.dp),
+                            verticalArrangement = Arrangement.spacedBy(9.dp),
                         ) {
-                            Text("Обзор тренировки", style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold)
-                            Text("${session.durationMinutes} мин · целевой RPE ${session.targetRpe}")
-                            Text(session.objective)
+                            Text("План тренировки", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
+                            Text(session.objective, maxLines = 2, overflow = TextOverflow.Ellipsis)
                             targets.groupBy { it.blockId }.values.forEach { blockTargets ->
                                 val first = blockTargets.first()
-                                Text(
-                                    first.blockTitle + " · " + blockTypeLabel(first.blockType),
-                                    color = MaterialTheme.colorScheme.primary,
-                                    fontWeight = FontWeight.Bold,
-                                )
-                                blockTargets.distinctBy { it.step.id }.forEach { blockTarget ->
-                                    val count = blockTargets.count { it.step.id == blockTarget.step.id }
+                                val uniqueExercises = blockTargets.distinctBy { it.step.id }
+                                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
                                     Text(
-                                        "• ${blockTarget.step.title} — ${blockTarget.step.prescription}" +
-                                            if (count > 1) " · $count этапа" else "",
+                                        first.blockTitle,
+                                        color = MaterialTheme.colorScheme.primary,
+                                        fontWeight = FontWeight.SemiBold,
                                     )
+                                    Text("${uniqueExercises.size} упр. · ${blockTargets.size} этапов", style = MaterialTheme.typography.bodySmall)
                                 }
-                                blockTargets.maxOfOrNull { it.restAfterSeconds }
-                                    ?.takeIf { it > 0 }
-                                    ?.let { Text("Отдых: до $it сек") }
+                                if (showPlanDetails) {
+                                    uniqueExercises.forEach { blockTarget ->
+                                        val count = blockTargets.count { it.step.id == blockTarget.step.id }
+                                        Text(
+                                            "• ${blockTarget.step.title} — ${blockTarget.step.prescription}" +
+                                                if (count > 1) " · $count этапа" else "",
+                                            style = MaterialTheme.typography.bodySmall,
+                                        )
+                                    }
+                                }
+                            }
+                            TextButton(onClick = { showPlanDetails = !showPlanDetails }) {
+                                Text(if (showPlanDetails) "Скрыть подробности" else "Полный план")
                             }
                         }
-                    }
-                }
-                item {
-                    Button(
-                        onClick = {
-                            if (!executionState.workoutStarted) {
-                                val now = System.currentTimeMillis()
-                                persistExecution(
-                                    executionState.snapshotAt(now).copy(
-                                        workoutStarted = true,
-                                        paused = false,
-                                        workoutTickStartedAtEpochMillis = now,
-                                    ),
-                                )
-                            }
-                            showOverview = false
-                        },
-                        enabled = !loadBlocked,
-                        modifier = Modifier.fillMaxWidth().testTag("start_workout_button"),
-                    ) {
-                        Icon(Icons.Default.PlayArrow, contentDescription = null)
-                        Text(if (executionState.workoutStarted) "  Продолжить тренировку" else "  Начать тренировку")
                     }
                 }
             }
@@ -529,7 +553,12 @@ fun SessionScreen(
                         },
                         style = MaterialTheme.typography.labelMedium,
                     )
-                    Text(current.title, style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold)
+                    Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                        Text(current.title, style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold, modifier = Modifier.weight(1f))
+                        TextButton(onClick = { showTechnique = !showTechnique }) {
+                            Text(if (showTechnique) "Скрыть" else "Техника")
+                        }
+                    }
                     Text(current.prescription, style = MaterialTheme.typography.titleMedium, color = MaterialTheme.colorScheme.primary)
                 }
                 if (executionState.timerMode == WorkoutTimerMode.REST) {
@@ -565,7 +594,7 @@ fun SessionScreen(
                                 horizontalAlignment = Alignment.CenterHorizontally,
                                 verticalArrangement = Arrangement.spacedBy(8.dp),
                             ) {
-                                Text(if (currentTarget.workSeconds != null) "Таймер упражнения" else "Секундомер подхода", fontWeight = FontWeight.Bold)
+                                Text(if (currentTarget.workSeconds != null) "Таймер" else "Секундомер", fontWeight = FontWeight.Bold)
                                 Text(
                                     if (currentTarget.workSeconds != null) formatDuration(workRemaining) else formatDuration(setSeconds),
                                     style = MaterialTheme.typography.headlineMedium,
@@ -591,6 +620,14 @@ fun SessionScreen(
                                     }
                                 } else {
                                     val timerUnit = if (currentTarget.totalSets > 1) "подход" else "этап"
+                                    Button(
+                                        onClick = { quickCompleteCurrentTarget() },
+                                        enabled = executionState.workoutStarted && !loadBlocked && !paused,
+                                        modifier = Modifier.fillMaxWidth().testTag("complete_set_button"),
+                                    ) {
+                                        Icon(Icons.Default.Check, contentDescription = null)
+                                        Text(if (setSeconds == 0) "  Готово" else "  Готово · ${formatDuration(setSeconds)}")
+                                    }
                                     OutlinedButton(
                                         onClick = {
                                             val now = System.currentTimeMillis()
@@ -632,16 +669,6 @@ fun SessionScreen(
                                         ) {
                                             Text("Сбросить таймер упражнения")
                                         }
-                                    }
-                                    Button(
-                                        onClick = { quickCompleteCurrentTarget() },
-                                        enabled = executionState.workoutStarted && !loadBlocked && !paused,
-                                        modifier = Modifier.fillMaxWidth().testTag("complete_set_button"),
-                                    ) {
-                                        Icon(Icons.Default.Check, contentDescription = null)
-                                        Text(
-                                            if (setSeconds == 0) "  Готово без таймера" else "  Готово · ${formatDuration(setSeconds)}",
-                                        )
                                     }
                                     TextButton(
                                         onClick = {
@@ -685,7 +712,7 @@ fun SessionScreen(
                                 Text(if (targetIndex == targets.lastIndex) "  Итог" else if (currentLog == null) "  Пропустить" else "  Далее")
                             }
                         }
-                        OutlinedButton(
+                        TextButton(
                             onClick = {
                                 pauseWorkoutForSafety()
                                 showPainStop = true
@@ -696,37 +723,32 @@ fun SessionScreen(
                         }
                     }
                 }
-                item {
-                    Text(
-                        "Техника выполнения",
-                        style = MaterialTheme.typography.titleMedium,
-                        fontWeight = FontWeight.Bold,
-                    )
-                }
-                item { ExerciseIllustration(current.imageKey()) }
-                item {
-                    Card {
-                        Column(Modifier.fillMaxWidth().padding(18.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                            details?.setup?.takeIf { it.isNotBlank() }?.let { Instruction("Подготовка", it) }
-                            Instruction("Выполнение", details?.execution ?: current.instructions)
-                            details?.breathing?.takeIf { it.isNotBlank() }?.let { Instruction("Дыхание", it) }
-                            if (details == null && current.instructions.isNotBlank()) {
-                                Text(current.instructions)
+                if (showTechnique) {
+                    item { ExerciseIllustration(current.imageKey()) }
+                    item {
+                        Card {
+                            Column(Modifier.fillMaxWidth().padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                                details?.setup?.takeIf { it.isNotBlank() }?.let { Instruction("Подготовка", it) }
+                                Instruction("Выполнение", details?.execution ?: current.instructions)
+                                details?.breathing?.takeIf { it.isNotBlank() }?.let { Instruction("Дыхание", it) }
+                                if (details == null && current.instructions.isNotBlank()) {
+                                    Text(current.instructions)
+                                }
+                                if (current.restSeconds > 0) Text("Отдых: ${current.restSeconds} сек", fontWeight = FontWeight.SemiBold)
                             }
-                            if (current.restSeconds > 0) Text("Отдых: ${current.restSeconds} сек", fontWeight = FontWeight.SemiBold)
                         }
                     }
-                }
-                details?.let { catalogItem ->
-                    item {
-                        val mistakes = remember(catalogItem.commonMistakesJson) {
-                            runCatching { Json.decodeFromString<List<String>>(catalogItem.commonMistakesJson) }.getOrDefault(emptyList())
-                        }
-                        if (mistakes.isNotEmpty()) {
-                            Card {
-                                Column(Modifier.fillMaxWidth().padding(16.dp), verticalArrangement = Arrangement.spacedBy(5.dp)) {
-                                    Text("Частые ошибки", fontWeight = FontWeight.Bold)
-                                    mistakes.forEach { Text("• $it", style = MaterialTheme.typography.bodySmall) }
+                    details?.let { catalogItem ->
+                        item {
+                            val mistakes = remember(catalogItem.commonMistakesJson) {
+                                runCatching { Json.decodeFromString<List<String>>(catalogItem.commonMistakesJson) }.getOrDefault(emptyList())
+                            }
+                            if (mistakes.isNotEmpty()) {
+                                Card {
+                                    Column(Modifier.fillMaxWidth().padding(16.dp), verticalArrangement = Arrangement.spacedBy(5.dp)) {
+                                        Text("Частые ошибки", fontWeight = FontWeight.Bold)
+                                        mistakes.forEach { Text("• $it", style = MaterialTheme.typography.bodySmall) }
+                                    }
                                 }
                             }
                         }
@@ -874,6 +896,31 @@ fun SessionScreen(
                 TextButton(onClick = { onSkip(session.id, "Тренировка остановлена из-за боли") }) { Text("Завершить и сохранить") }
             },
             dismissButton = { TextButton(onClick = { showPainStop = false }) { Text("Остаться на паузе") } },
+        )
+    }
+    if (showSafetyDetails) {
+        AlertDialog(
+            onDismissRequest = { showSafetyDetails = false },
+            title = { Text("Ограничения на сегодня") },
+            text = {
+                Text(
+                    buildString {
+                        if (adaptationRequired) {
+                            append(readinessRecommendation)
+                            append(" Приложение не заменяет упражнения автоматически. ")
+                        }
+                        if (shoulderRestrictionActive) {
+                            append("Для плеча используйте только безболезненный диапазон. Не добавляйте подтягивания, брусья и движения над головой.")
+                        }
+                    }.trim(),
+                )
+            },
+            confirmButton = { TextButton(onClick = { showSafetyDetails = false }) { Text("Понятно") } },
+            dismissButton = {
+                if (adaptationRequired) {
+                    TextButton(onClick = { showSafetyDetails = false; onEditReadiness() }) { Text("Изменить состояние") }
+                }
+            },
         )
     }
 }

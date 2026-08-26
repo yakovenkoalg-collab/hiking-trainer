@@ -57,7 +57,7 @@ fun ActivitiesScreen(
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text("Фактические тренировки") },
+                title = { Text("Тренировки Garmin") },
                 navigationIcon = {
                     IconButton(onClick = onBack) {
                         Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Назад")
@@ -68,18 +68,18 @@ fun ActivitiesScreen(
     ) { padding ->
         LazyColumn(
             Modifier.fillMaxSize().padding(padding),
-            contentPadding = PaddingValues(20.dp),
+            contentPadding = PaddingValues(16.dp),
             verticalArrangement = Arrangement.spacedBy(12.dp),
         ) {
-            item {
-                Text(
-                    "Данные Garmin — это факт выполнения, но приложение не закрывает тренировку плана автоматически. " +
-                        "Проверьте совпадение и подтвердите связь.",
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
-            }
             if (activities.isEmpty()) {
-                item { Card { Text("Активностей пока нет. Обновите Garmin в разделе «Ещё → Garmin и Health Connect».", Modifier.padding(18.dp)) } }
+                item {
+                    Card {
+                        Column(Modifier.fillMaxWidth().padding(16.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                            Text("Нет тренировок Garmin", fontWeight = FontWeight.Bold)
+                            Text("Обновите данные в разделе «Ещё → Garmin»", style = MaterialTheme.typography.bodySmall)
+                        }
+                    }
+                }
             } else {
                 items(activities.size, key = { activities[it].id }) { index ->
                     val activity = activities[index]
@@ -134,30 +134,28 @@ private fun ActivityCard(
     }
     val laps = remember(activity.lapsJson) { decodeMetricList<ActivityLapSummary>(activity.lapsJson) }
     Card {
-        Column(Modifier.fillMaxWidth().padding(16.dp), verticalArrangement = Arrangement.spacedBy(7.dp)) {
+        Column(Modifier.fillMaxWidth().padding(14.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
             Text(activity.title, fontWeight = FontWeight.Bold)
-            Text("${activity.activityType} · ${formatActivityTime(activity.startAtEpochMillis)} · ${formatActivityDuration(activity.durationSeconds)}")
+            Text("${formatActivityTime(activity.startAtEpochMillis)} · ${formatActivityDuration(activity.durationSeconds)}", style = MaterialTheme.typography.bodySmall)
             Text(
                 buildString {
                     activity.distanceMeters?.let { append("${formatDistance(it)} км  ") }
                     formatPace(activity.durationSeconds, activity.distanceMeters)?.let { append("$it/км  ") }
                     activity.elevationMeters?.let { append("+${it.toInt()} м  ") }
                     activity.descentMeters?.let { append("−${it.toInt()} м") }
-                }.ifBlank { "Основные метрики отсутствуют в источнике" },
+                }.ifBlank { activity.activityType },
                 style = MaterialTheme.typography.bodySmall,
             )
-            Text(
-                buildString {
+            val secondaryMetrics = buildString {
                     activity.averageHeartRate?.let { append("пульс ${it.toInt()}") }
                     activity.maxHeartRate?.let { append(" / ${it.toInt()}  ") }
                     activity.averageCadence?.let { append("каденс ${it.toInt()} шаг/мин  ") }
                     activity.averagePowerWatts?.let { append("${it.toInt()} Вт") }
-                }.trim().ifBlank { "Пульс, каденс и мощность не переданы источником" },
-                style = MaterialTheme.typography.bodySmall,
-            )
+                }.trim()
+            if (secondaryMetrics.isNotBlank()) Text(secondaryMetrics, style = MaterialTheme.typography.bodySmall)
             if (activity.aerobicTrainingEffect != null || activity.trainingLoad != null || laps.isNotEmpty()) {
                 TextButton(onClick = { detailsVisible = !detailsVisible }) {
-                    Text(if (detailsVisible) "Скрыть показатели" else "Показать показатели Garmin")
+                    Text(if (detailsVisible) "Скрыть показатели" else "Показатели")
                 }
             }
             if (detailsVisible) {

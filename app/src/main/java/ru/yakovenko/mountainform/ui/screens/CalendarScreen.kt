@@ -76,10 +76,10 @@ fun CalendarScreen(
 
     LazyColumn(
         modifier = Modifier.fillMaxSize().padding(padding),
-        contentPadding = PaddingValues(20.dp),
-        verticalArrangement = Arrangement.spacedBy(16.dp),
+        contentPadding = PaddingValues(16.dp),
+        verticalArrangement = Arrangement.spacedBy(12.dp),
     ) {
-        item { SectionTitle("Календарь", "План, переносы и неизменяемая история выполнения") }
+        item { SectionTitle("Календарь") }
         item {
             MonthCalendar(
                 month = selectedMonth,
@@ -108,10 +108,7 @@ fun CalendarScreen(
         if (selectedSessions.isEmpty()) {
             item {
                 Card {
-                    Text(
-                        "День свободен. Перенести сюда можно только будущую запланированную тренировку.",
-                        Modifier.padding(18.dp),
-                    )
+                    Text("Свободный день", Modifier.padding(16.dp))
                 }
             }
         } else {
@@ -126,7 +123,7 @@ fun CalendarScreen(
         }
         if (state.rescheduleEvents.isNotEmpty()) {
             item { SectionTitle("Последние переносы") }
-            items(state.rescheduleEvents.take(3).size) { index ->
+            items(state.rescheduleEvents.take(2).size) { index ->
                 val event = state.rescheduleEvents[index]
                 Text(
                     "${formatEpochDay(event.fromEpochDay)} → ${formatEpochDay(event.toEpochDay)}" +
@@ -139,14 +136,11 @@ fun CalendarScreen(
         if (bufferDays <= 14) {
             item {
                 Card {
-                    Column(Modifier.fillMaxWidth().padding(18.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                        Text("Резерв плана: $futurePlanned тренировок / ${bufferDays.coerceAtLeast(0)} дней", fontWeight = FontWeight.Bold)
-                        Text(
-                            "После контрольного отчёта предпочтителен персонально скорректированный JSON из нашего чата. " +
-                                "Подготовьте согласованный персональный блок или следующий резерв. Календарь изменится только после просмотра изменений и вашего подтверждения.",
-                        )
+                    Column(Modifier.fillMaxWidth().padding(14.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                        Text("План до ${formatEpochDay(lastPlannedDay)}", fontWeight = FontWeight.Bold)
+                        Text("$futurePlanned предстоящих тренировок", style = MaterialTheme.typography.bodySmall)
                         Button(onClick = onProposeNextBlock, modifier = Modifier.fillMaxWidth()) {
-                            Text("Подготовить следующий блок")
+                            Text("Обновить план")
                         }
                     }
                 }

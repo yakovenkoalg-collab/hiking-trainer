@@ -28,7 +28,6 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import ru.yakovenko.mountainform.health.HealthSummary
 import ru.yakovenko.mountainform.ui.AppUiState
-import ru.yakovenko.mountainform.ui.components.SectionTitle
 import ru.yakovenko.mountainform.update.UpdateState
 
 @Composable
@@ -46,14 +45,14 @@ fun MoreScreen(
 ) {
     LazyColumn(
         modifier = Modifier.fillMaxSize().padding(padding),
-        contentPadding = PaddingValues(20.dp),
-        verticalArrangement = Arrangement.spacedBy(14.dp),
+        contentPadding = PaddingValues(16.dp),
+        verticalArrangement = Arrangement.spacedBy(8.dp),
     ) {
-        item { SectionTitle("Ещё", "Настройки и обслуживание отдельно от тренировки") }
+        item { Text("Ещё", style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.Bold) }
         item {
             SettingsEntry(
                 Icons.Default.Person,
-                "Профиль, цели и ограничения",
+                "Профиль и цели",
                 state.profile?.let { "${it.age} лет · ${it.preferredDays}" } ?: "Загрузка…",
                 onOpenProfile,
             )
@@ -61,7 +60,7 @@ fun MoreScreen(
         item {
             SettingsEntry(
                 Icons.Default.HealthAndSafety,
-                "Garmin и Health Connect",
+                "Garmin / Health Connect",
                 when {
                     healthSummary.permissionsGranted && healthSummary.hasAnyData -> "Данные получены"
                     healthSummary.permissionsGranted -> "Доступ есть, записей пока нет"
@@ -73,7 +72,7 @@ fun MoreScreen(
         item {
             SettingsEntry(
                 Icons.Default.CloudSync,
-                "Обмен планом и резервные копии",
+                "Обмен и копии",
                 when {
                     state.settings?.yandexSyncEnabled == true -> "Подключён Яндекс Диск"
                     state.settings?.sharedFolderName != null -> state.settings.sharedFolderName
@@ -104,7 +103,7 @@ fun MoreScreen(
         item {
             SettingsEntry(
                 Icons.Default.Info,
-                "О приложении и обновления",
+                "Приложение",
                 updateState.message.ifBlank { "Версия ${ru.yakovenko.mountainform.BuildConfig.VERSION_NAME}" },
                 onOpenAbout,
             )
@@ -128,7 +127,7 @@ private fun SettingsEntry(
 ) {
     Card(onClick = onClick) {
         Row(
-            Modifier.fillMaxWidth().padding(16.dp),
+            Modifier.fillMaxWidth().padding(horizontal = 14.dp, vertical = 11.dp),
             horizontalArrangement = Arrangement.spacedBy(12.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
