@@ -1,7 +1,7 @@
 {
-  "versionCode": 11,
-  "versionName": "0.3.8",
-  "apkUrl": "https://github.com/yakovenkoalg-collab/hiking-trainer/releases/download/v0.3.8/mountain-form-0.3.8.apk",
-  "sha256": "d04ea3b509772b9f71a2a9fd257558e8e80851f8c6131a83536a0e32cf430bf1",
-  "notes": "Адаптивный главный экран с единым блоком состояния и ограничений, выделенной следующей тренировкой и компактными действиями; беговая цель перенесена в Прогресс."
+  "versionCode": 12,
+  "versionName": "0.3.9",
+  "apkUrl": "https://github.com/yakovenkoalg-collab/hiking-trainer/releases/download/v0.3.9/mountain-form-0.3.9.apk",
+  "sha256": "3d531ab11aecca3e6a2efc4def2be4e150ef11a72385f7b9f94d7761efbd2087",
+  "notes": "Единый экран Garmin: обновление Health Connect, импорт FIT/ZIP, просмотр и привязка активности к тренировке в одном сценарии."
 }
