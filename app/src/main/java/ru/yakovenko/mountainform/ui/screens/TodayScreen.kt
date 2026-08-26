@@ -1,5 +1,6 @@
 package ru.yakovenko.mountainform.ui.screens
 
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
@@ -9,16 +10,17 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.filled.ArrowForward
 import androidx.compose.material.icons.automirrored.filled.DirectionsRun
 import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.FitnessCenter
+import androidx.compose.material.icons.filled.Warning
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.Checkbox
 import androidx.compose.material3.FilterChip
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
@@ -36,13 +38,16 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
-import ru.yakovenko.mountainform.data.GoalType
 import ru.yakovenko.mountainform.domain.ReadinessLevel
 import ru.yakovenko.mountainform.ui.AppUiState
 import ru.yakovenko.mountainform.ui.components.ReadinessPill
 import ru.yakovenko.mountainform.ui.formatEpochDay
+import ru.yakovenko.mountainform.ui.formatLongEpochDay
 
 @Composable
 fun TodayScreen(
@@ -59,8 +64,9 @@ fun TodayScreen(
     var showShoulderDetails by remember { mutableStateOf(false) }
     val decision = state.readinessDecision
     val session = state.nextSession
+    val today = java.time.LocalDate.now().toEpochDay()
     val doneToday = state.practices.any {
-        it.epochDay == java.time.LocalDate.now().toEpochDay() && it.type == "CORE_POSTURE"
+        it.epochDay == today && it.type == "CORE_POSTURE"
     }
 
     LaunchedEffect(openReadiness) {
@@ -79,31 +85,42 @@ fun TodayScreen(
             Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
                 Text("Горная форма", style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.Bold)
                 Text(
-                    state.profile?.currentPhase ?: "Подготовка профиля…",
+                    formatLongEpochDay(today),
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
             }
         }
         item {
-            Card(colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.primaryContainer)) {
+            Card(
+                colors = CardDefaults.cardColors(
+                    containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.55f),
+                ),
+            ) {
                 Column(
-                    Modifier.fillMaxWidth().padding(horizontal = 14.dp, vertical = 10.dp),
-                    verticalArrangement = Arrangement.spacedBy(6.dp),
+                    Modifier.fillMaxWidth().padding(16.dp),
+                    verticalArrangement = Arrangement.spacedBy(10.dp),
                 ) {
                     Row(
                         Modifier.fillMaxWidth(),
                         verticalAlignment = Alignment.CenterVertically,
                         horizontalArrangement = Arrangement.spacedBy(8.dp),
                     ) {
-                        Text("Готовность", fontWeight = FontWeight.Bold, modifier = Modifier.weight(1f))
-                        ReadinessPill(
-                            decision.level,
-                            if (state.todayCheck == null) "Не отмечена" else decision.title,
+                        Text(
+                            "Состояние на сегодня",
+                            style = MaterialTheme.typography.titleMedium,
+                            fontWeight = FontWeight.Bold,
+                            modifier = Modifier.weight(1f).testTag("readiness_title"),
+                            maxLines = 2,
+                            overflow = TextOverflow.Ellipsis,
                         )
                         TextButton(onClick = { showCheck = true }) {
                             Text(if (state.todayCheck == null) "Отметить" else "Изменить")
                         }
                     }
+                    ReadinessPill(
+                        decision.level,
+                        if (state.todayCheck == null) "Готовность не отмечена" else decision.title,
+                    )
                     if (decision.level != ReadinessLevel.GREEN) {
                         Text(
                             decision.recommendation,
@@ -112,18 +129,34 @@ fun TodayScreen(
                             maxLines = 2,
                         )
                     }
-                }
-            }
-        }
-        if (state.profile?.shoulderRestrictionActive == true) {
-            item {
-                Card(colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.errorContainer.copy(alpha = 0.45f))) {
-                    Row(
-                        Modifier.fillMaxWidth().padding(horizontal = 14.dp, vertical = 8.dp),
-                        verticalAlignment = Alignment.CenterVertically,
-                    ) {
-                        Text("Плечо: ограничение активно", fontWeight = FontWeight.SemiBold, modifier = Modifier.weight(1f))
-                        TextButton(onClick = { showShoulderDetails = true }) { Text("Подробнее") }
+                    if (state.profile?.shoulderRestrictionActive == true) {
+                        HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
+                        Row(
+                            Modifier
+                                .fillMaxWidth()
+                                .clickable(role = Role.Button) { showShoulderDetails = true }
+                                .padding(vertical = 2.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(10.dp),
+                        ) {
+                            Icon(
+                                Icons.Default.Warning,
+                                contentDescription = null,
+                                tint = MaterialTheme.colorScheme.error,
+                            )
+                            Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                                Text(
+                                    "Плечо: действует ограничение",
+                                    fontWeight = FontWeight.SemiBold,
+                                    maxLines = 2,
+                                )
+                                Text(
+                                    "Открыть рекомендации",
+                                    style = MaterialTheme.typography.labelMedium,
+                                    color = MaterialTheme.colorScheme.primary,
+                                )
+                            }
+                        }
                     }
                 }
             }
@@ -132,42 +165,49 @@ fun TodayScreen(
             if (session == null) {
                 Card { Text("Следующих тренировок пока нет", Modifier.padding(16.dp)) }
             } else {
-                Card(onClick = { onOpenSession(session.id) }) {
+                Card(colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.primaryContainer)) {
                     Column(
-                        Modifier.fillMaxWidth().padding(16.dp),
-                        verticalArrangement = Arrangement.spacedBy(8.dp),
+                        Modifier.fillMaxWidth().padding(18.dp),
+                        verticalArrangement = Arrangement.spacedBy(10.dp),
                     ) {
-                        Text("Следующая тренировка", style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.primary)
-                        Row(horizontalArrangement = Arrangement.spacedBy(10.dp), verticalAlignment = Alignment.CenterVertically) {
+                        Row(
+                            Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.spacedBy(10.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                        ) {
                             Icon(
                                 if (session.type == "RUN") Icons.AutoMirrored.Filled.DirectionsRun else Icons.Default.FitnessCenter,
                                 contentDescription = null,
                                 tint = MaterialTheme.colorScheme.primary,
                             )
                             Column(Modifier.weight(1f)) {
-                                Text(session.title, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
-                                Text(formatEpochDay(session.plannedEpochDay), color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                Text(
+                                    if (session.plannedEpochDay == today) "Тренировка на сегодня" else "Следующая тренировка",
+                                    style = MaterialTheme.typography.labelLarge,
+                                    color = MaterialTheme.colorScheme.primary,
+                                )
                             }
-                            Icon(Icons.AutoMirrored.Filled.ArrowForward, contentDescription = null)
                         }
-                        Text("${session.durationMinutes} мин · целевой RPE ${session.targetRpe}", style = MaterialTheme.typography.labelLarge)
+                        Text(
+                            session.title,
+                            style = MaterialTheme.typography.titleLarge,
+                            fontWeight = FontWeight.Bold,
+                        )
+                        Text(
+                            "${formatEpochDay(session.plannedEpochDay)} · ${session.durationMinutes} мин · RPE ${session.targetRpe}",
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                        Button(
+                            onClick = { onOpenSession(session.id) },
+                            modifier = Modifier.fillMaxWidth().testTag("open_next_session"),
+                        ) {
+                            Text("Открыть тренировку")
+                        }
                     }
                 }
             }
         }
-        state.reviewCheckpoints.firstOrNull { it.status != ru.yakovenko.mountainform.data.ReviewStatus.RESOLVED }?.let { checkpoint ->
-            item {
-                Card(colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.secondaryContainer)) {
-                    Column(Modifier.fillMaxWidth().padding(14.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                        Text("Пора обновить план", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
-                        Text(checkpoint.reason, style = MaterialTheme.typography.bodySmall, maxLines = 2)
-                        Button(onClick = onShareReviewReport, modifier = Modifier.fillMaxWidth()) {
-                            Text(if (checkpoint.status == ru.yakovenko.mountainform.data.ReviewStatus.EXPORTED) "Поделиться снова" else "Поделиться отчётом")
-                        }
-                    }
-                }
-            }
-        }
+        item { Text("На сегодня", style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.onSurfaceVariant) }
         item {
             Card {
                 Row(
@@ -182,19 +222,34 @@ fun TodayScreen(
                         Text("Core и осанка", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
                         Text("10 минут · без боли в плече", style = MaterialTheme.typography.bodySmall)
                     }
-                    OutlinedButton(onClick = onCompleteCorePractice, enabled = !doneToday) {
-                        Text(if (doneToday) "Готово" else "Отметить")
+                    if (doneToday) {
+                        Text(
+                            "Выполнено",
+                            style = MaterialTheme.typography.labelLarge,
+                            color = MaterialTheme.colorScheme.primary,
+                            fontWeight = FontWeight.SemiBold,
+                        )
+                    } else {
+                        TextButton(onClick = onCompleteCorePractice) {
+                            Text("Отметить")
+                        }
                     }
                 }
             }
         }
-        state.goals.firstOrNull { it.type == GoalType.RUNNING }?.let { goal ->
+        state.reviewCheckpoints.firstOrNull { it.status != ru.yakovenko.mountainform.data.ReviewStatus.RESOLVED }?.let { checkpoint ->
             item {
-                Card(colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.tertiaryContainer)) {
-                    Column(Modifier.fillMaxWidth().padding(14.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                        Text("Весенняя цель", style = MaterialTheme.typography.labelLarge)
-                        Text(goal.title, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
-                        Text("Сейчас: лёгкий бег и набор объёма", style = MaterialTheme.typography.bodySmall)
+                Card(
+                    colors = CardDefaults.cardColors(
+                        containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.45f),
+                    ),
+                ) {
+                    Column(Modifier.fillMaxWidth().padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                        Text("План нужно обновить", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+                        Text(checkpoint.reason, style = MaterialTheme.typography.bodyMedium, maxLines = 2)
+                        OutlinedButton(onClick = onShareReviewReport, modifier = Modifier.fillMaxWidth()) {
+                            Text("Сформировать отчёт")
+                        }
                     }
                 }
             }

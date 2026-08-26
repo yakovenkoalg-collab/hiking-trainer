@@ -25,6 +25,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import ru.yakovenko.mountainform.data.GoalType
 import ru.yakovenko.mountainform.data.SessionStatus
 import ru.yakovenko.mountainform.health.HealthSummary
 import ru.yakovenko.mountainform.ui.AppUiState
@@ -130,11 +131,14 @@ fun ProgressScreen(
                 Text(if (latestBody == null) "Добавить показатели тела" else "Обновить показатели тела")
             }
         }
-        item {
-            Card {
-                Column(Modifier.fillMaxWidth().padding(14.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                    Text("Беговая цель", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
-                    Text("После 8–12 недель выберем: 21,1 или 42,2 км", style = MaterialTheme.typography.bodySmall)
+        state.goals.firstOrNull { it.type == GoalType.RUNNING }?.let { goal ->
+            item {
+                Card {
+                    Column(Modifier.fillMaxWidth().padding(14.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                        Text("Беговая цель", style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.primary)
+                        Text(goal.title, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+                        Text(goal.notes, style = MaterialTheme.typography.bodySmall)
+                    }
                 }
             }
         }
