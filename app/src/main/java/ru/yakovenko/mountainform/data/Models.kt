@@ -15,6 +15,7 @@ data class UserProfileEntity(
     val preferredDays: String,
     val currentPhase: String,
     val shoulderRestrictionActive: Boolean,
+    @ColumnInfo(defaultValue = "'RESTRICTED'") val shoulderLoadPhase: String = ShoulderLoadPhase.RESTRICTED,
     val kneeObservationActive: Boolean,
     val updatedAtEpochMillis: Long,
 )
@@ -466,6 +467,15 @@ object SessionStatus {
     const val PLANNED = "PLANNED"
     const val COMPLETED = "COMPLETED"
     const val SKIPPED = "SKIPPED"
+}
+
+object ShoulderLoadPhase {
+    const val RESTRICTED = "RESTRICTED"
+    const val THERAPIST_CLEARED = "THERAPIST_CLEARED"
+    const val RETURNING = "RETURNING"
+    const val FULL = "FULL"
+
+    val ordered = listOf(RESTRICTED, THERAPIST_CLEARED, RETURNING, FULL)
 }
 
 object GoalType {

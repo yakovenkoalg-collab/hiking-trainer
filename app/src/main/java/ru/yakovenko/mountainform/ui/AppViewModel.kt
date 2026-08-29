@@ -272,6 +272,20 @@ class AppViewModel(
         }
     }
 
+    fun replaceSessionActivities(sessionId: String, selectedActivityIds: List<String>) {
+        viewModelScope.launch {
+            runCatching { repository.replaceSessionActivities(sessionId, selectedActivityIds) }
+                .onSuccess {
+                    message.value = when (selectedActivityIds.size) {
+                        0 -> "Связи Garmin удалены"
+                        1 -> "Garmin-активность связана с тренировкой"
+                        else -> "С тренировкой связано ${selectedActivityIds.size} Garmin-активности"
+                    }
+                }
+                .onFailure { message.value = it.message ?: "Не удалось обновить связи Garmin" }
+        }
+    }
+
     fun ignoreActivity(activityId: String) {
         viewModelScope.launch {
             repository.ignoreActivity(activityId)

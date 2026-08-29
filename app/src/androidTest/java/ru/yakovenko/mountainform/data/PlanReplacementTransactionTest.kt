@@ -87,17 +87,34 @@ class PlanReplacementTransactionTest {
     }
 
     @Test
-    fun oneTrainingSessionCannotBeLinkedToTwoActivities() = runBlocking {
+    fun oneTrainingSessionCanBeLinkedToSeveralActivities() = runBlocking {
         val target = session("target", SessionStatus.COMPLETED)
         dao.upsertSession(target)
         dao.upsertImportedActivities(listOf(activity("first"), activity("second")))
 
         dao.linkImportedActivity("first", target.id)
-        val error = runCatching { dao.linkImportedActivity("second", target.id) }.exceptionOrNull()
+        dao.linkImportedActivity("second", target.id)
 
-        assertTrue(error is IllegalArgumentException)
         assertEquals(ActivityLinkStatus.LINKED, dao.getImportedActivity("first")?.status)
-        assertEquals(ActivityLinkStatus.UNLINKED, dao.getImportedActivity("second")?.status)
+        assertEquals(ActivityLinkStatus.LINKED, dao.getImportedActivity("second")?.status)
+        assertEquals(target.id, dao.getImportedActivity("first")?.linkedSessionId)
+        assertEquals(target.id, dao.getImportedActivity("second")?.linkedSessionId)
+    }
+
+    @Test
+    fun replacingSessionActivitiesUnlinksOnlyRemovedRecord() = runBlocking {
+        val target = session("target", SessionStatus.COMPLETED)
+        dao.upsertSession(target)
+        dao.upsertImportedActivities(listOf(activity("first"), activity("second"), activity("third")))
+        dao.linkImportedActivity("first", target.id)
+        dao.linkImportedActivity("second", target.id)
+
+        dao.replaceSessionActivities(target.id, listOf("second", "third"))
+
+        assertNull(dao.getImportedActivity("first")?.linkedSessionId)
+        assertEquals(ActivityLinkStatus.UNLINKED, dao.getImportedActivity("first")?.status)
+        assertEquals(target.id, dao.getImportedActivity("second")?.linkedSessionId)
+        assertEquals(target.id, dao.getImportedActivity("third")?.linkedSessionId)
     }
 
     @Test

@@ -76,4 +76,32 @@ class WorkoutExecutionStateTest {
         assertEquals(35, snapshot.restRemainingSeconds)
         assertEquals(45_000L, snapshot.timerTickStartedAtEpochMillis)
     }
+
+    @Test
+    fun stalePersistedTimerIsPausedWithoutAddingWallClockTime() {
+        val state = WorkoutExecutionState(
+            sessionId = "session",
+            workoutStarted = true,
+            workoutElapsedSeconds = 900,
+            workoutTickStartedAtEpochMillis = 1_000,
+            timerMode = WorkoutTimerMode.SET,
+            timerTickStartedAtEpochMillis = 1_000,
+            setElapsedSeconds = 30,
+        )
+
+        val restored = state.restoreForForeground(nowEpochMillis = 4 * 60 * 60 * 1_000L)
+
+        assertEquals(true, restored.paused)
+        assertEquals(900, restored.workoutElapsedAt(99_000_000))
+        assertEquals(WorkoutTimerMode.NONE, restored.timerMode)
+    }
+
+    @Test
+    fun completionDurationFlagsMultiDayAndSuspiciouslyShortValues() {
+        assertEquals(true, durationLooksImplausible(4 * 60 * 60, 65))
+        assertEquals(true, durationLooksImplausible(27, 55))
+        assertEquals(true, durationLooksImplausible(0, 55))
+        assertEquals(false, durationLooksImplausible(3_600, 65))
+        assertEquals(false, durationLooksImplausible(3 * 60 * 60, 90))
+    }
 }

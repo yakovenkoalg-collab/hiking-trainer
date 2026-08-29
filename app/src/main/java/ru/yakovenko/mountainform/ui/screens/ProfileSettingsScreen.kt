@@ -39,6 +39,7 @@ import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.ui.unit.dp
 import ru.yakovenko.mountainform.data.GoalEventEntity
 import ru.yakovenko.mountainform.data.GoalType
+import ru.yakovenko.mountainform.data.ShoulderLoadPhase
 import ru.yakovenko.mountainform.data.UserProfileEntity
 import ru.yakovenko.mountainform.ui.AppUiState
 import ru.yakovenko.mountainform.ui.components.SafetyBanner
@@ -71,6 +72,7 @@ fun ProfileSettingsScreen(
     var preferredDays by remember(profile) { mutableStateOf(profile.preferredDays) }
     var phase by remember(profile) { mutableStateOf(profile.currentPhase) }
     var shoulderActive by remember(profile) { mutableStateOf(profile.shoulderRestrictionActive) }
+    var shoulderLoadPhase by remember(profile) { mutableStateOf(profile.shoulderLoadPhase) }
     var kneeActive by remember(profile) { mutableStateOf(profile.kneeObservationActive) }
     var distance by remember(runningGoal) { mutableStateOf(runningGoal?.distanceKm ?: 21.1) }
     var targetDate by remember(runningGoal) {
@@ -78,6 +80,7 @@ fun ProfileSettingsScreen(
     }
     var showDatePicker by remember { mutableStateOf(false) }
     var restrictionToDisable by remember { mutableStateOf<String?>(null) }
+    var pendingShoulderPhase by remember { mutableStateOf<String?>(null) }
     val parsedAge = age.toIntOrNull()
     val parsedHeight = height.toIntOrNull()
     val parsedWeight = weight.toDoubleOrNull()
@@ -162,7 +165,14 @@ fun ProfileSettingsScreen(
             item { SectionTitle("Активные ограничения", "Отключайте ограничение только после собственной оценки или специалиста") }
             item {
                 CheckSetting("Левое плечо", shoulderActive) { next ->
-                    if (!next && shoulderActive) restrictionToDisable = "shoulder" else shoulderActive = next
+                    if (!next && shoulderActive) {
+                        restrictionToDisable = "shoulder"
+                    } else {
+                        shoulderActive = next
+                        if (next && shoulderLoadPhase == ShoulderLoadPhase.FULL) {
+                            shoulderLoadPhase = ShoulderLoadPhase.RESTRICTED
+                        }
+                    }
                 }
             }
             item {
@@ -172,6 +182,30 @@ fun ProfileSettingsScreen(
             }
             if (shoulderActive) {
                 item { SafetyBanner("Болезненное отведение, движения над головой, подтягивания и брусья остаются заблокированы.") }
+                item {
+                    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                        Text("Этап возврата нагрузки", fontWeight = FontWeight.Bold)
+                        Text(
+                            "Повышайте этап только после очного согласования. Нулевая боль сама по себе не снимает ограничение.",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                        Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                            shoulderPhaseOptions().forEach { (value, label) ->
+                                FilterChip(
+                                    selected = shoulderLoadPhase == value,
+                                    onClick = {
+                                        val currentIndex = ShoulderLoadPhase.ordered.indexOf(shoulderLoadPhase)
+                                        val nextIndex = ShoulderLoadPhase.ordered.indexOf(value)
+                                        if (nextIndex > currentIndex) pendingShoulderPhase = value else shoulderLoadPhase = value
+                                    },
+                                    label = { Text(label) },
+                                    modifier = Modifier.fillMaxWidth(),
+                                )
+                            }
+                        }
+                    }
+                }
             }
             item { SectionTitle("Весенний беговой старт") }
             item {
@@ -197,6 +231,7 @@ fun ProfileSettingsScreen(
                                 preferredDays = preferredDays.trim(),
                                 currentPhase = phase.trim(),
                                 shoulderRestrictionActive = shoulderActive,
+                                shoulderLoadPhase = if (shoulderActive) shoulderLoadPhase else ShoulderLoadPhase.FULL,
                                 kneeObservationActive = kneeActive,
                             ),
                         )
@@ -252,7 +287,12 @@ fun ProfileSettingsScreen(
             confirmButton = {
                 Button(
                     onClick = {
-                        if (shoulder) shoulderActive = false else kneeActive = false
+                        if (shoulder) {
+                            shoulderActive = false
+                            shoulderLoadPhase = ShoulderLoadPhase.FULL
+                        } else {
+                            kneeActive = false
+                        }
                         restrictionToDisable = null
                     },
                 ) { Text("Отключить") }
@@ -260,7 +300,31 @@ fun ProfileSettingsScreen(
             dismissButton = { TextButton(onClick = { restrictionToDisable = null }) { Text("Отмена") } },
         )
     }
+
+    pendingShoulderPhase?.let { nextPhase ->
+        AlertDialog(
+            onDismissRequest = { pendingShoulderPhase = null },
+            title = { Text("Повысить этап нагрузки?") },
+            text = {
+                Text(
+                    "Приложение разрешит только упражнения этого этапа. Подтвердите, что диапазон движения и нагрузка согласованы со специалистом.",
+                )
+            },
+            confirmButton = {
+                Button(onClick = { shoulderLoadPhase = nextPhase; pendingShoulderPhase = null }) {
+                    Text("Подтвердить")
+                }
+            },
+            dismissButton = { TextButton(onClick = { pendingShoulderPhase = null }) { Text("Отмена") } },
+        )
+    }
 }
+
+private fun shoulderPhaseOptions(): List<Pair<String, String>> = listOf(
+    ShoulderLoadPhase.RESTRICTED to "Ограничено",
+    ShoulderLoadPhase.THERAPIST_CLEARED to "Разрешённый комплекс",
+    ShoulderLoadPhase.RETURNING to "Возврат силы",
+)
 
 @Composable
 private fun CheckSetting(label: String, checked: Boolean, onChange: (Boolean) -> Unit) {

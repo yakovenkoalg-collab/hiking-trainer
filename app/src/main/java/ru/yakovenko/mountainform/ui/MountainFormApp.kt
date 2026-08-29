@@ -160,6 +160,7 @@ fun MountainFormApp(
                     },
                     openReadiness = openReadinessOnToday,
                     onReadinessOpened = { openReadinessOnToday = false },
+                    onOpenShoulderSettings = { navController.navigate("profile-settings") },
                 )
             }
             composable("calendar") {
@@ -282,6 +283,8 @@ fun MountainFormApp(
                     stepLogs = state.stepLogs,
                     setLogs = state.setLogs,
                     shoulderRestrictionActive = state.profile?.shoulderRestrictionActive == true,
+                    shoulderLoadPhase = state.profile?.shoulderLoadPhase
+                        ?: ru.yakovenko.mountainform.data.ShoulderLoadPhase.RESTRICTED,
                     loadBlocked = state.readinessDecision.level == ru.yakovenko.mountainform.domain.ReadinessLevel.RED,
                     adaptationRequired = state.readinessDecision.level == ru.yakovenko.mountainform.domain.ReadinessLevel.YELLOW,
                     readinessRecommendation = state.readinessDecision.recommendation,
@@ -314,6 +317,8 @@ fun MountainFormApp(
                         viewModel.restoreSkippedSession(sessionId)
                         navController.popBackStack()
                     },
+                    importedActivities = state.importedActivities,
+                    onReplaceSessionActivities = viewModel::replaceSessionActivities,
                 )
             }
         }

@@ -44,6 +44,7 @@ import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import ru.yakovenko.mountainform.domain.ReadinessLevel
+import ru.yakovenko.mountainform.data.ShoulderLoadPhase
 import ru.yakovenko.mountainform.ui.AppUiState
 import ru.yakovenko.mountainform.ui.components.ReadinessPill
 import ru.yakovenko.mountainform.ui.formatEpochDay
@@ -61,6 +62,7 @@ fun TodayScreen(
     onShareReviewReport: () -> Unit,
     openReadiness: Boolean = false,
     onReadinessOpened: () -> Unit = {},
+    onOpenShoulderSettings: () -> Unit = {},
 ) {
     var showCheck by remember { mutableStateOf(false) }
     var showShoulderDetails by remember { mutableStateOf(false) }
@@ -69,6 +71,11 @@ fun TodayScreen(
     val today = java.time.LocalDate.now().toEpochDay()
     val doneToday = state.practices.any {
         it.epochDay == today && it.type == "CORE_POSTURE"
+    }
+    val shoulderPhaseLabel = when (state.profile?.shoulderLoadPhase) {
+        ShoulderLoadPhase.THERAPIST_CLEARED -> "разрешённый комплекс"
+        ShoulderLoadPhase.RETURNING -> "возврат силы"
+        else -> "ограничено"
     }
 
     LaunchedEffect(openReadiness) {
@@ -148,12 +155,12 @@ fun TodayScreen(
                             )
                             Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
                                 Text(
-                                    "Плечо: действует ограничение",
+                                    "Плечо: $shoulderPhaseLabel",
                                     fontWeight = FontWeight.SemiBold,
                                     maxLines = 2,
                                 )
                                 Text(
-                                    "Открыть рекомендации",
+                                    "Рекомендации и этап нагрузки",
                                     style = MaterialTheme.typography.labelMedium,
                                     color = MaterialTheme.colorScheme.primary,
                                 )
@@ -281,6 +288,14 @@ fun TodayScreen(
                 )
             },
             confirmButton = { TextButton(onClick = { showShoulderDetails = false }) { Text("Понятно") } },
+            dismissButton = {
+                TextButton(
+                    onClick = {
+                        showShoulderDetails = false
+                        onOpenShoulderSettings()
+                    },
+                ) { Text("Настроить этап") }
+            },
         )
     }
 }

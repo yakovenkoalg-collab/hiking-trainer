@@ -209,9 +209,6 @@ interface MountainFormDao {
         if (sessionId != null) {
             val session = getSession(sessionId) ?: error("Тренировка не найдена")
             require(session.status != SessionStatus.SKIPPED) { "Пропущенную тренировку нельзя связать с активностью" }
-            require(
-                getImportedActivities().none { it.id != activityId && it.linkedSessionId == sessionId },
-            ) { "Тренировка уже связана с другой активностью" }
         }
         upsertImportedActivity(
             activity.copy(
@@ -219,6 +216,32 @@ interface MountainFormDao {
                 status = if (sessionId == null) ActivityLinkStatus.UNLINKED else ActivityLinkStatus.LINKED,
             ),
         )
+    }
+
+    @Transaction
+    suspend fun replaceSessionActivities(sessionId: String, selectedActivityIds: List<String>) {
+        val session = getSession(sessionId) ?: error("Тренировка не найдена")
+        require(session.status != SessionStatus.SKIPPED) { "Пропущенную тренировку нельзя связать с активностью" }
+        val selectedIds = selectedActivityIds.toSet()
+        val activities = getImportedActivities()
+        require(selectedIds.all { selectedId ->
+            activities.any { activity ->
+                activity.id == selectedId &&
+                    activity.status != ActivityLinkStatus.IGNORED &&
+                    (activity.linkedSessionId == null || activity.linkedSessionId == sessionId)
+            }
+        }) { "Одна из активностей уже связана с другой тренировкой или игнорируется" }
+        activities
+            .filter { it.linkedSessionId == sessionId || it.id in selectedIds }
+            .forEach { activity ->
+                val linked = activity.id in selectedIds
+                upsertImportedActivity(
+                    activity.copy(
+                        linkedSessionId = sessionId.takeIf { linked },
+                        status = if (linked) ActivityLinkStatus.LINKED else ActivityLinkStatus.UNLINKED,
+                    ),
+                )
+            }
     }
 
     @Query(
@@ -315,7 +338,7 @@ interface MountainFormDao {
         ReviewCheckpointEntity::class,
         ImportedActivityEntity::class,
     ],
-    version = 5,
+    version = 6,
     exportSchema = true,
 )
 abstract class MountainFormDatabase : RoomDatabase() {
@@ -499,11 +522,18 @@ abstract class MountainFormDatabase : RoomDatabase() {
             }
         }
 
+        val MIGRATION_5_6 = object : Migration(5, 6) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE user_profile ADD COLUMN shoulderLoadPhase TEXT NOT NULL DEFAULT 'RESTRICTED'")
+                db.execSQL("UPDATE user_profile SET shoulderLoadPhase = 'FULL' WHERE shoulderRestrictionActive = 0")
+            }
+        }
+
         fun create(context: Context): MountainFormDatabase =
             Room.databaseBuilder(
                 context.applicationContext,
                 MountainFormDatabase::class.java,
                 "mountain-form.db",
-            ).addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5).build()
+            ).addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6).build()
     }
 }

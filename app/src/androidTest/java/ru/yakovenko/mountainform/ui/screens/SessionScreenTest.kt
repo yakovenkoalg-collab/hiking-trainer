@@ -9,6 +9,7 @@ import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.onAllNodesWithText
+import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.isToggleable
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performScrollTo
@@ -79,14 +80,13 @@ class SessionScreenTest {
         composeRule.onNodeWithText("60 мин · RPE 5").assertIsDisplayed()
         composeRule.onNodeWithText("План тренировки").assertIsDisplayed()
         composeRule.onNodeWithTag("start_workout_button").performClick()
-        val sessionContent = composeRule.onNodeWithTag("session_content")
-        sessionContent.performScrollToNode(hasTestTag("set_timer_button"))
         composeRule.onNodeWithTag("set_timer_button")
             .assertIsDisplayed()
             .assertIsEnabled()
             .performClick()
 
-        composeRule.onNodeWithText("Приостановить этап", substring = true).assertIsDisplayed()
+        composeRule.onNodeWithTag("complete_set_button").assertIsDisplayed()
+        composeRule.onNodeWithText("Осталось").assertIsDisplayed()
     }
 
     @Test
@@ -193,8 +193,7 @@ class SessionScreenTest {
             }
         }
 
-        val sessionContent = composeRule.onNodeWithTag("session_content")
-        sessionContent.performScrollToNode(hasTestTag("reset_set_timer_button"))
+        composeRule.onNodeWithContentDescription("Ещё действия").performClick()
         composeRule.onNodeWithTag("reset_set_timer_button").performClick()
         composeRule.onNodeWithText("Сбросить таймер этапа?").assertIsDisplayed()
         composeRule.onNodeWithText("Сбросить").performClick()
@@ -297,8 +296,7 @@ class SessionScreenTest {
             }
         }
 
-        composeRule.onNodeWithTag("session_content").performScrollToNode(androidx.compose.ui.test.hasText("Возникла боль — остановиться"))
-        composeRule.onNodeWithText("Возникла боль — остановиться").performClick()
+        composeRule.onNodeWithTag("pain_stop_button").performClick()
         composeRule.onNodeWithText("Остаться на паузе").assertIsDisplayed()
         composeRule.runOnIdle { check(savedState?.paused == true) }
     }
@@ -336,8 +334,8 @@ class SessionScreenTest {
         }
 
         composeRule.onNodeWithTag("start_workout_button").performClick()
-        composeRule.onNodeWithTag("session_content").performScrollToNode(hasTestTag("next_stage_button"))
-        composeRule.onNodeWithTag("next_stage_button").performClick()
+        composeRule.onNodeWithContentDescription("Ещё действия").performClick()
+        composeRule.onNodeWithText("Пропустить этап").performClick()
         composeRule.onNodeWithText("Почему пропускаете этап?").assertIsDisplayed()
         composeRule.onNodeWithText("Пропустить этап").assertIsDisplayed()
     }
@@ -373,7 +371,6 @@ class SessionScreenTest {
         }
 
         composeRule.onNodeWithTag("start_workout_button").performClick()
-        composeRule.onNodeWithTag("session_content").performScrollToNode(hasTestTag("complete_set_button"))
         composeRule.onNodeWithTag("complete_set_button").performClick()
 
         composeRule.onNodeWithText("Итог тренировки").assertIsDisplayed()

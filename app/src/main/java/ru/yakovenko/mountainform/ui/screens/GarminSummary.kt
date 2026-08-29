@@ -10,6 +10,41 @@ internal data class GarminActivitySummary(
     val needsAttention: Boolean,
 )
 
+internal data class LinkedGarminGroup(
+    val typeLabel: String,
+    val count: Int,
+    val durationSeconds: Long,
+    val distanceMeters: Double?,
+    val elevationMeters: Double?,
+    val averageHeartRate: Double?,
+    val maxHeartRate: Double?,
+)
+
+internal fun linkedGarminGroups(activities: List<ImportedActivityEntity>): List<LinkedGarminGroup> =
+    activities
+        .groupBy { friendlyActivityType(it.activityType) }
+        .map { (typeLabel, group) ->
+            val totalDuration = group.sumOf { it.durationSeconds.coerceAtLeast(0) }
+            val heartRateDuration = group.sumOf { activity ->
+                activity.durationSeconds.takeIf { activity.averageHeartRate != null && it > 0 } ?: 0
+            }
+            LinkedGarminGroup(
+                typeLabel = typeLabel,
+                count = group.size,
+                durationSeconds = totalDuration,
+                distanceMeters = group.mapNotNull { it.distanceMeters }.takeIf { it.isNotEmpty() }?.sum(),
+                elevationMeters = group.mapNotNull { it.elevationMeters }.takeIf { it.isNotEmpty() }?.sum(),
+                averageHeartRate = heartRateDuration.takeIf { it > 0 }?.let { duration ->
+                    group.sumOf { activity ->
+                        (activity.averageHeartRate ?: 0.0) *
+                            activity.durationSeconds.takeIf { activity.averageHeartRate != null && it > 0 }.orZero()
+                    } / duration
+                },
+                maxHeartRate = group.mapNotNull { it.maxHeartRate }.maxOrNull(),
+            )
+        }
+        .sortedBy { it.typeLabel }
+
 internal fun garminActivitySummary(
     activities: List<ImportedActivityEntity>,
     healthSummary: HealthSummary,
@@ -61,3 +96,5 @@ private fun activityCount(count: Int): String {
     }
     return "$count $word"
 }
+
+private fun Long?.orZero(): Long = this ?: 0L

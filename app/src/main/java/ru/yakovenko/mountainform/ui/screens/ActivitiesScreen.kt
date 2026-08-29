@@ -209,7 +209,7 @@ fun ActivitiesScreen(
 
     linkingActivity?.let { activity ->
         val activityDay = activityEpochDay(activity)
-        val candidates = linkCandidates(activity, sessions, activities)
+        val candidates = linkCandidates(activity, sessions)
         AlertDialog(
             onDismissRequest = { linkingActivity = null },
             title = { Text("Связать с тренировкой") },
@@ -222,7 +222,7 @@ fun ActivitiesScreen(
                             style = MaterialTheme.typography.bodySmall,
                         )
                         Text(
-                            "Свободные тренировки за 7 дней до и после активности",
+                            "Тренировки за 7 дней до и после активности",
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                             modifier = Modifier.padding(top = 8.dp),
@@ -231,8 +231,8 @@ fun ActivitiesScreen(
                     if (candidates.isEmpty()) {
                         item {
                             Text(
-                                "Нет свободных тренировок с ${formatEpochDay(activityDay - LINK_WINDOW_DAYS)} " +
-                                    "по ${formatEpochDay(activityDay + LINK_WINDOW_DAYS)}. Уже связанные тренировки скрыты.",
+                                "Нет доступных тренировок с ${formatEpochDay(activityDay - LINK_WINDOW_DAYS)} " +
+                                    "по ${formatEpochDay(activityDay + LINK_WINDOW_DAYS)}.",
                                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                             )
                         }
@@ -242,7 +242,13 @@ fun ActivitiesScreen(
                             OutlinedButton(
                                 onClick = { onLinkActivity(activity.id, session.id); linkingActivity = null },
                                 modifier = Modifier.fillMaxWidth(),
-                            ) { Text("${formatEpochDay(session.plannedEpochDay)} · ${session.title}") }
+                            ) {
+                                val linkedCount = activities.count { it.linkedSessionId == session.id && it.id != activity.id }
+                                Text(
+                                    "${formatEpochDay(session.plannedEpochDay)} · ${session.title}" +
+                                        if (linkedCount > 0) " · уже Garmin: $linkedCount" else "",
+                                )
+                            }
                         }
                     }
                 }
@@ -428,18 +434,12 @@ private fun activityEpochDay(activity: ImportedActivityEntity): Long =
 internal fun linkCandidates(
     activity: ImportedActivityEntity,
     sessions: List<TrainingSessionEntity>,
-    activities: List<ImportedActivityEntity>,
 ): List<TrainingSessionEntity> {
     val activityDay = activityEpochDay(activity)
-    val occupiedSessionIds = activities.asSequence()
-        .filter { it.id != activity.id }
-        .mapNotNull { it.linkedSessionId }
-        .toSet()
     return sessions
         .asSequence()
         .filter { abs(it.plannedEpochDay - activityDay) <= LINK_WINDOW_DAYS }
         .filterNot { it.status == SessionStatus.SKIPPED }
-        .filterNot { it.id in occupiedSessionIds }
         .sortedWith(compareBy<TrainingSessionEntity> { it.plannedEpochDay }.thenBy { it.title })
         .toList()
 }

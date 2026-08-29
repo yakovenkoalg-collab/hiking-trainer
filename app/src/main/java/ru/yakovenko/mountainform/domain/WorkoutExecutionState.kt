@@ -3,6 +3,8 @@ package ru.yakovenko.mountainform.domain
 import kotlinx.serialization.Serializable
 import kotlin.math.max
 
+private const val STALE_TIMER_SECONDS = 3 * 60 * 60
+
 @Serializable
 enum class WorkoutTimerMode {
     NONE,
@@ -28,6 +30,32 @@ data class WorkoutExecutionState(
     val restSourceTargetIndex: Int? = null,
     val restAlerted: Boolean = false,
 ) {
+    fun hasStaleRunningTimer(
+        nowEpochMillis: Long,
+        staleAfterSeconds: Int = STALE_TIMER_SECONDS,
+    ): Boolean {
+        if (!workoutStarted || paused) return false
+        val oldestRunningTick = listOfNotNull(workoutTickStartedAtEpochMillis, timerTickStartedAtEpochMillis).minOrNull()
+            ?: return false
+        return elapsedSince(oldestRunningTick, nowEpochMillis) > staleAfterSeconds
+    }
+
+    fun restoreForForeground(
+        nowEpochMillis: Long,
+        staleAfterSeconds: Int = STALE_TIMER_SECONDS,
+    ): WorkoutExecutionState {
+        if (!workoutStarted || paused) return this
+        if (hasStaleRunningTimer(nowEpochMillis, staleAfterSeconds)) {
+            return copy(
+                paused = true,
+                workoutTickStartedAtEpochMillis = null,
+                timerMode = WorkoutTimerMode.NONE,
+                timerTickStartedAtEpochMillis = null,
+            )
+        }
+        return copy(workoutTickStartedAtEpochMillis = nowEpochMillis)
+    }
+
     fun workoutElapsedAt(nowEpochMillis: Long): Int = workoutElapsedSeconds +
         if (workoutStarted && !paused) elapsedSince(workoutTickStartedAtEpochMillis, nowEpochMillis) else 0
 
@@ -63,4 +91,9 @@ data class WorkoutExecutionState(
 
     private fun elapsedSince(startedAtEpochMillis: Long?, nowEpochMillis: Long): Int =
         startedAtEpochMillis?.let { max(0L, nowEpochMillis - it).div(1_000L).toInt() } ?: 0
+
 }
+
+fun durationLooksImplausible(actualSeconds: Int, plannedMinutes: Int): Boolean =
+    actualSeconds > max(3 * 60 * 60, plannedMinutes * 3 * 60) ||
+        (plannedMinutes >= 15 && actualSeconds in 0 until 5 * 60)

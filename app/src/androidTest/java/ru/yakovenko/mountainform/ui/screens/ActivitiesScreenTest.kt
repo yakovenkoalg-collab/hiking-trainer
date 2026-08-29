@@ -28,7 +28,7 @@ class ActivitiesScreenTest {
         var linkedActivity: String? = null
         var linkedSession: String? = null
         val today = LocalDate.now().toEpochDay()
-        val activityStart = LocalDate.now().atTime(12, 0).atZone(ZoneId.systemDefault()).toInstant().toEpochMilli()
+        val activityStart = System.currentTimeMillis() - 3_600_000
         val activity = ImportedActivityEntity(
             id = "garmin-bike",
             sourceRecordId = "garmin-bike-record",
@@ -99,8 +99,8 @@ class ActivitiesScreenTest {
             earlierSession,
         )
         assertEquals(
-            listOf("earlier", "friday", "later", "boundary"),
-            linkCandidates(activity, sessions, listOf(activity, otherActivity)).map { it.id },
+            listOf("earlier", "friday", "linked", "later", "boundary"),
+            linkCandidates(activity, sessions).map { it.id },
         )
 
         composeRule.setContent {
@@ -141,7 +141,7 @@ class ActivitiesScreenTest {
         composeRule.onNodeWithText("каденс 84 об/мин", substring = true).performScrollTo().assertIsDisplayed()
         composeRule.onNodeWithText("Связать").performScrollTo().performClick()
         composeRule.onNodeWithText("Связать с тренировкой").assertIsDisplayed()
-        composeRule.onNodeWithText("Свободные тренировки за 7 дней до и после активности").assertIsDisplayed()
+        composeRule.onNodeWithText("Тренировки за 7 дней до и после активности").assertIsDisplayed()
         composeRule.onNodeWithText("Пятничная тренировка", substring = true).performClick()
 
         assertEquals("garmin-bike", linkedActivity)

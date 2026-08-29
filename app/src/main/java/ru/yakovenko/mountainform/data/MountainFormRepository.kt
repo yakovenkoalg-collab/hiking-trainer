@@ -4,6 +4,7 @@ import kotlinx.coroutines.flow.Flow
 import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
 import ru.yakovenko.mountainform.domain.AgreedHybridPlan
+import ru.yakovenko.mountainform.domain.ProgressedHybridPlan
 import ru.yakovenko.mountainform.domain.ShoulderSafety
 import java.time.DayOfWeek
 import java.time.LocalDate
@@ -105,9 +106,7 @@ class MountainFormRepository(
         if (dao.getSettings() == null) {
             dao.upsertSettings(AppSettingsEntity())
         }
-        if (dao.getExerciseCatalog().isEmpty()) {
-            dao.upsertExerciseCatalog(seedExerciseCatalog(json))
-        }
+        dao.upsertExerciseCatalog(seedExerciseCatalog(json))
         maybeCreateReviewCheckpoint()
     }
 
@@ -254,7 +253,15 @@ class MountainFormRepository(
                 weightKg = profile.weightKg,
                 currentPhase = profile.currentPhase,
                 activeConstraints = buildList {
-                    if (profile.shoulderRestrictionActive) add("Левое плечо: болезненное отведение")
+                    if (profile.shoulderRestrictionActive) {
+                        val loadPhase = when (profile.shoulderLoadPhase) {
+                            ShoulderLoadPhase.THERAPIST_CLEARED -> "разрешённый специалистом комплекс"
+                            ShoulderLoadPhase.RETURNING -> "возврат силы"
+                            ShoulderLoadPhase.FULL -> "полная нагрузка"
+                            else -> "ограничено"
+                        }
+                        add("Левое плечо: болезненное отведение; этап нагрузки — $loadPhase")
+                    }
                     if (profile.kneeObservationActive) add("Правое колено: наблюдение после длинных спусков")
                 },
             ),
@@ -483,7 +490,8 @@ class MountainFormRepository(
         val profile = requireNotNull(dao.getProfile())
         val conflicts = plan.sessions.flatMap { session ->
             session.steps.mapNotNull { step ->
-                val shoulderConflict = profile.shoulderRestrictionActive && ShoulderSafety.conflicts(step)
+                val shoulderConflict = profile.shoulderRestrictionActive &&
+                    ShoulderSafety.conflicts(step, profile.shoulderLoadPhase)
                 if (shoulderConflict) "${session.title}: ${step.title} конфликтует с ограничением плеча" else null
             }
         }
@@ -635,6 +643,10 @@ class MountainFormRepository(
         dao.linkImportedActivity(activityId, sessionId)
     }
 
+    suspend fun replaceSessionActivities(sessionId: String, selectedActivityIds: List<String>) {
+        dao.replaceSessionActivities(sessionId, selectedActivityIds)
+    }
+
     suspend fun ignoreActivity(activityId: String) {
         val activity = dao.getImportedActivity(activityId) ?: return
         dao.upsertImportedActivity(activity.copy(status = ActivityLinkStatus.IGNORED, linkedSessionId = null))
@@ -664,6 +676,31 @@ class MountainFormRepository(
 
     suspend fun proposeNextBaseBlock(today: LocalDate = LocalDate.now()): ImportPreview {
         val existing = dao.getSessions()
+        val profile = requireNotNull(dao.getProfile())
+        val completedEpochDays = existing
+            .filter { it.status == SessionStatus.COMPLETED }
+            .mapTo(mutableSetOf()) { it.plannedEpochDay }
+        val includeClearedUpperBody = !profile.shoulderRestrictionActive ||
+            ShoulderLoadPhase.ordered.indexOf(profile.shoulderLoadPhase) >=
+            ShoulderLoadPhase.ordered.indexOf(ShoulderLoadPhase.THERAPIST_CLEARED)
+        if (
+            ProgressedHybridPlan.isRelevant(
+                today = today,
+                existingSessionIds = existing.mapTo(mutableSetOf()) { it.id },
+                includeClearedUpperBody = includeClearedUpperBody,
+                completedEpochDays = completedEpochDays,
+            )
+        ) {
+            return previewPlan(
+                json.encodeToString(
+                    ProgressedHybridPlan.envelope(
+                        includeClearedUpperBody = includeClearedUpperBody,
+                        today = today,
+                        completedEpochDays = completedEpochDays,
+                    ),
+                ),
+            )
+        }
         if (AgreedHybridPlan.isRelevant(today, existing.mapTo(mutableSetOf()) { it.id })) {
             return previewPlan(json.encodeToString(AgreedHybridPlan.envelope()))
         }
@@ -672,7 +709,6 @@ class MountainFormRepository(
             existing.maxOfOrNull { LocalDate.ofEpochDay(it.plannedEpochDay) } ?: today,
         )
         val firstTuesday = lastDate.plusDays(1).with(TemporalAdjusters.nextOrSame(DayOfWeek.TUESDAY))
-        val profile = requireNotNull(dao.getProfile())
         val sessions = buildList {
             existing
                 .filter { it.status == SessionStatus.PLANNED }
