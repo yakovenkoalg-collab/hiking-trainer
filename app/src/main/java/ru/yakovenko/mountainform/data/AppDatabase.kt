@@ -265,6 +265,26 @@ interface MountainFormDao {
     @Query("DELETE FROM training_sessions WHERE id IN (:ids) AND status = 'PLANNED'")
     suspend fun deletePlannedSessions(ids: List<String>)
 
+    @Query(
+        "SELECT planned.id FROM training_sessions AS planned " +
+            "WHERE planned.status = 'PLANNED' AND EXISTS (" +
+            "SELECT 1 FROM training_sessions AS completed " +
+            "WHERE completed.status = 'COMPLETED' " +
+            "AND completed.plannedEpochDay = planned.plannedEpochDay)",
+    )
+    suspend fun getPlannedSessionIdsOnCompletedDays(): List<String>
+
+    @Transaction
+    suspend fun removePlannedSessionsOnCompletedDays(): Int {
+        val ids = getPlannedSessionIdsOnCompletedDays()
+        if (ids.isEmpty()) return 0
+        deleteStepLogsForPlannedSessions(ids)
+        deleteSetLogsForPlannedSessions(ids)
+        unlinkActivitiesFromPlannedSessions(ids)
+        deletePlannedSessions(ids)
+        return ids.size
+    }
+
     @Transaction
     suspend fun applyPlanChanges(
         sessions: List<TrainingSessionEntity>,

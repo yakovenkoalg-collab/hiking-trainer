@@ -43,6 +43,7 @@ class AgreedHybridPlanTest {
     fun blockStopsBeingCurrentAfterItWasAppliedOrItsWindowPassed() {
         assertTrue(AgreedHybridPlan.isRelevant(LocalDate.of(2026, 8, 20), emptySet()))
         assertFalse(AgreedHybridPlan.isRelevant(LocalDate.of(2026, 8, 20), AgreedHybridPlan.sessionIds))
+        assertFalse(AgreedHybridPlan.isRelevant(LocalDate.of(2026, 8, 30), emptySet()))
         assertFalse(AgreedHybridPlan.isRelevant(LocalDate.of(2026, 8, 31), emptySet()))
     }
 }

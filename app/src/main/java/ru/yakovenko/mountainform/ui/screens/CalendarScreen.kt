@@ -146,8 +146,13 @@ fun CalendarScreen(
                         Text("План до ${formatEpochDay(lastPlannedDay)}", fontWeight = FontWeight.Bold)
                         Text(trainingCount(futurePlanned, "предстоящая", "предстоящие", "предстоящих"), style = MaterialTheme.typography.bodySmall)
                         Button(onClick = onProposeNextBlock, modifier = Modifier.fillMaxWidth()) {
-                            Text("Обновить план")
+                            Text("Проверить план")
                         }
+                        Text(
+                            "Сначала увидите список изменений. Прошлые и выполненные дни не меняются.",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
                     }
                 }
             }

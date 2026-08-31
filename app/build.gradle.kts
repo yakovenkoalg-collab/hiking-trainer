@@ -16,8 +16,8 @@ android {
         applicationId = "ru.yakovenko.mountainform"
         minSdk = 28
         targetSdk = 36
-        versionCode = 14
-        versionName = "0.3.11"
+        versionCode = 15
+        versionName = "0.3.12"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         vectorDrawables.useSupportLibrary = true

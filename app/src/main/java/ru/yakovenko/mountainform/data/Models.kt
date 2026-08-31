@@ -316,13 +316,14 @@ data class PlanSession(
 
 @Serializable
 data class ReportEnvelope(
-    val schemaVersion: Int = 4,
+    val schemaVersion: Int = 5,
     val generatedAtEpochMillis: Long,
     val periodStartEpochDay: Long,
     val periodEndEpochDay: Long,
     val profile: ReportProfile,
     val goals: List<ReportGoal>,
     val sessions: List<ReportSession>,
+    val upcomingSessions: List<ReportSession> = emptyList(),
     val readiness: List<ReportReadiness>,
     val bodyMetrics: List<ReportBodyMetric>,
     val setLogs: List<ReportSetLog> = emptyList(),
@@ -343,20 +344,22 @@ data class ReportProfile(
 data class ReportGoal(
     val type: String,
     val title: String,
-    val targetEpochDay: Long?,
-    val distanceKm: Double?,
+    val targetEpochDay: Long? = null,
+    val distanceKm: Double? = null,
     val status: String,
 )
 
 @Serializable
 data class ReportSession(
+    val id: String,
     val plannedEpochDay: Long,
     val title: String,
     val type: String,
     val status: String,
     val targetRpe: Int,
-    val actualRpe: Int?,
+    val actualRpe: Int? = null,
     val actualDurationSeconds: Int,
+    val durationStatus: String,
     val notes: String,
 )
 
@@ -375,8 +378,8 @@ data class ReportReadiness(
 @Serializable
 data class ReportBodyMetric(
     val epochDay: Long,
-    val weightKg: Double?,
-    val waistCm: Double?,
+    val weightKg: Double? = null,
+    val waistCm: Double? = null,
 )
 
 @Serializable
@@ -407,12 +410,12 @@ data class ReportActivity(
     val activityType: String,
     val startAtEpochMillis: Long,
     val durationSeconds: Long,
-    val distanceMeters: Double?,
-    val elevationMeters: Double?,
+    val distanceMeters: Double? = null,
+    val elevationMeters: Double? = null,
     val descentMeters: Double? = null,
     val caloriesKcal: Double? = null,
-    val averageHeartRate: Double?,
-    val maxHeartRate: Double?,
+    val averageHeartRate: Double? = null,
+    val maxHeartRate: Double? = null,
     val averageCadence: Double? = null,
     val averagePowerWatts: Double? = null,
     val aerobicTrainingEffect: Double? = null,
@@ -428,7 +431,7 @@ data class ReportActivity(
     val averageGroundContactTimeMs: Double? = null,
     val averageStepLengthMm: Double? = null,
     val laps: List<ActivityLapSummary> = emptyList(),
-    val linkedSessionId: String?,
+    val linkedSessionId: String? = null,
 )
 
 @Serializable

@@ -3,6 +3,7 @@ package ru.yakovenko.mountainform.data
 import androidx.room.Room
 import androidx.test.platform.app.InstrumentationRegistry
 import kotlinx.coroutines.runBlocking
+import kotlinx.serialization.decodeFromString
 import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
 import org.junit.After
@@ -84,6 +85,138 @@ class PlanReplacementTransactionTest {
         assertNull(activity.linkedSessionId)
         assertEquals(ActivityLinkStatus.UNLINKED, activity.status)
         assertEquals("revision", dao.getRevisions().single().id)
+    }
+
+    @Test
+    fun duplicatePlannedSessionOnCompletedDayIsRemovedWithOnlyItsDependentData() = runBlocking {
+        val day = LocalDate.now().toEpochDay()
+        val planned = session("duplicate-planned", SessionStatus.PLANNED).copy(plannedEpochDay = day)
+        val completed = session("completed", SessionStatus.COMPLETED).copy(plannedEpochDay = day)
+        dao.upsertSessions(listOf(planned, completed))
+        dao.upsertStepLogs(
+            listOf(
+                SessionStepLogEntity(planned.id, "step", true, 1),
+                SessionStepLogEntity(completed.id, "step", true, 1),
+            ),
+        )
+        dao.upsertImportedActivity(activity("linked").copy(linkedSessionId = planned.id, status = ActivityLinkStatus.LINKED))
+
+        assertEquals(1, dao.removePlannedSessionsOnCompletedDays())
+
+        assertEquals(listOf(completed.id), dao.getSessions().map { it.id })
+        assertFalse(dao.getStepLogs().any { it.sessionId == planned.id })
+        assertTrue(dao.getStepLogs().any { it.sessionId == completed.id })
+        assertNull(dao.getImportedActivity("linked")?.linkedSessionId)
+    }
+
+    @Test
+    fun previewProtectsPastAndCompletedDaysAndClampsReplacementRange() = runBlocking {
+        val today = LocalDate.of(2026, 8, 31)
+        dao.upsertProfile(profile())
+        dao.upsertSessions(
+            listOf(
+                session("past-existing", SessionStatus.PLANNED).copy(plannedEpochDay = today.minusDays(1).toEpochDay()),
+                session("completed-today", SessionStatus.COMPLETED).copy(plannedEpochDay = today.toEpochDay()),
+                session("future-existing", SessionStatus.PLANNED).copy(plannedEpochDay = today.plusDays(1).toEpochDay()),
+            ),
+        )
+        val raw = Json.encodeToString(
+            plan(
+                "protected",
+                today.minusDays(1) to "past-new",
+                today to "completed-day-new",
+                today.plusDays(2) to "future-new",
+                replaceFrom = today.minusDays(1),
+                replaceThrough = today.plusDays(2),
+            ),
+        )
+
+        val preview = MountainFormRepository(dao).previewPlan(raw, today)
+
+        assertEquals(listOf("future-new"), preview.plan.sessions.map { it.id })
+        assertEquals(today.toEpochDay(), preview.plan.replacePlannedFromEpochDay)
+        assertEquals(listOf("future-existing"), preview.removedSessionIds)
+        assertEquals(2, preview.preservedHistory)
+    }
+
+    @Test
+    fun applyRechecksCompletedDaysWhenStateChangedAfterPreview() = runBlocking {
+        val today = LocalDate.now()
+        val targetDay = today.plusDays(1)
+        dao.upsertProfile(profile())
+        val raw = Json.encodeToString(plan("race", targetDay to "future-new"))
+        val repository = MountainFormRepository(dao)
+        val preview = repository.previewPlan(raw, today)
+        dao.upsertSession(session("completed-after-preview", SessionStatus.COMPLETED).copy(plannedEpochDay = targetDay.toEpochDay()))
+
+        val error = runCatching { repository.applyPlan(preview) }.exceptionOrNull()
+
+        assertTrue(error is IllegalArgumentException)
+        assertNull(dao.getSession("future-new"))
+        assertEquals(SessionStatus.COMPLETED, dao.getSession("completed-after-preview")?.status)
+    }
+
+    @Test
+    fun completedAugust30SelectsCorrectedFutureBlockInsteadOfRecreatingOldPlan() = runBlocking {
+        val completedDay = LocalDate.of(2026, 8, 30)
+        dao.upsertProfile(profile())
+        dao.upsertSession(
+            session("progress-long-${completedDay.toEpochDay()}", SessionStatus.COMPLETED)
+                .copy(plannedEpochDay = completedDay.toEpochDay()),
+        )
+        listOf(
+            LocalDate.of(2026, 9, 1) to "progress-hybrid",
+            LocalDate.of(2026, 9, 3) to "progress-optional",
+            LocalDate.of(2026, 9, 4) to "progress-strength",
+            LocalDate.of(2026, 9, 6) to "progress-long",
+            LocalDate.of(2026, 9, 8) to "progress-hybrid",
+            LocalDate.of(2026, 9, 10) to "progress-optional",
+            LocalDate.of(2026, 9, 11) to "progress-strength",
+            LocalDate.of(2026, 9, 13) to "progress-long",
+        ).forEach { (date, prefix) ->
+            dao.upsertSession(
+                session("$prefix-${date.toEpochDay()}", SessionStatus.PLANNED)
+                    .copy(plannedEpochDay = date.toEpochDay()),
+            )
+        }
+
+        val preview = MountainFormRepository(dao).proposeNextBaseBlock(LocalDate.of(2026, 8, 31))
+
+        assertTrue(preview.plan.planId.startsWith("progressed-hybrid-v2"))
+        assertTrue(preview.plan.sessions.all { it.plannedEpochDay >= LocalDate.of(2026, 8, 31).toEpochDay() })
+        assertTrue(preview.plan.sessions.any { it.id.startsWith("progress-home-hybrid-") })
+        assertFalse(preview.plan.sessions.any { it.id.startsWith("hybrid-long-run-") })
+        assertEquals(
+            setOf(
+                "progress-optional-${LocalDate.of(2026, 9, 3).toEpochDay()}",
+                "progress-strength-${LocalDate.of(2026, 9, 4).toEpochDay()}",
+            ),
+            preview.removedSessionIds.toSet(),
+        )
+    }
+
+    @Test
+    fun reportMarksImplausibleDurationAndIncludesUpcomingPlanWithSessionIds() = runBlocking {
+        val today = LocalDate.of(2026, 8, 31)
+        dao.upsertProfile(profile())
+        dao.upsertSessions(
+            listOf(
+                session("short-duration", SessionStatus.COMPLETED).copy(
+                    plannedEpochDay = today.minusDays(6).toEpochDay(),
+                    actualDurationSeconds = 27,
+                ),
+                session("upcoming", SessionStatus.PLANNED).copy(
+                    plannedEpochDay = today.plusDays(3).toEpochDay(),
+                ),
+            ),
+        )
+
+        val report = Json.decodeFromString<ReportEnvelope>(MountainFormRepository(dao).exportReport(today))
+
+        assertEquals(5, report.schemaVersion)
+        assertEquals("SUSPECT", report.sessions.single().durationStatus)
+        assertEquals("short-duration", report.sessions.single().id)
+        assertEquals("upcoming", report.upcomingSessions.single().id)
     }
 
     @Test
@@ -214,6 +347,44 @@ class PlanReplacementTransactionTest {
         endAtEpochMillis = 2,
         durationSeconds = 1,
         importedAtEpochMillis = 3,
+    )
+
+    private fun profile() = UserProfileEntity(
+        age = 41,
+        heightCm = 183,
+        weightKg = 75.0,
+        preferredDays = "вторник, пятница, воскресенье",
+        currentPhase = "BASE",
+        shoulderRestrictionActive = true,
+        kneeObservationActive = true,
+        updatedAtEpochMillis = 1,
+    )
+
+    private fun plan(
+        id: String,
+        vararg sessions: Pair<LocalDate, String>,
+        replaceFrom: LocalDate? = null,
+        replaceThrough: LocalDate? = null,
+    ) = PlanEnvelope(
+        planId = id,
+        author = "test",
+        reason = "test",
+        generatedAtEpochMillis = 1,
+        replacePlannedFromEpochDay = replaceFrom?.toEpochDay(),
+        replacePlannedThroughEpochDay = replaceThrough?.toEpochDay(),
+        sessions = sessions.map { (date, sessionId) ->
+            PlanSession(
+                id = sessionId,
+                plannedEpochDay = date.toEpochDay(),
+                title = sessionId,
+                type = "RUN",
+                phase = "BASE",
+                objective = "test",
+                durationMinutes = 30,
+                targetRpe = 3,
+                steps = listOf(ExerciseStep("step", "Шаг", "1 × 1", "test")),
+            )
+        },
     )
 
     private fun session(id: String, status: String) = TrainingSessionEntity(

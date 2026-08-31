@@ -6,6 +6,7 @@ import kotlinx.serialization.json.Json
 import ru.yakovenko.mountainform.domain.AgreedHybridPlan
 import ru.yakovenko.mountainform.domain.ProgressedHybridPlan
 import ru.yakovenko.mountainform.domain.ShoulderSafety
+import ru.yakovenko.mountainform.domain.durationLooksImplausible
 import java.time.DayOfWeek
 import java.time.LocalDate
 import java.time.temporal.TemporalAdjusters
@@ -106,6 +107,7 @@ class MountainFormRepository(
         if (dao.getSettings() == null) {
             dao.upsertSettings(AppSettingsEntity())
         }
+        dao.removePlannedSessionsOnCompletedDays()
         dao.upsertExerciseCatalog(seedExerciseCatalog(json))
         maybeCreateReviewCheckpoint()
     }
@@ -268,18 +270,10 @@ class MountainFormRepository(
             goals = dao.getGoals().map {
                 ReportGoal(it.type, it.title, it.targetEpochDay, it.distanceKm, it.status)
             },
-            sessions = allSessions.filter { it.plannedEpochDay in start..end }.map {
-                ReportSession(
-                    plannedEpochDay = it.plannedEpochDay,
-                    title = it.title,
-                    type = it.type,
-                    status = it.status,
-                    targetRpe = it.targetRpe,
-                    actualRpe = it.actualRpe,
-                    actualDurationSeconds = it.actualDurationSeconds,
-                    notes = it.completionNotes,
-                )
-            },
+            sessions = allSessions.filter { it.plannedEpochDay in start..end }.map(::reportSession),
+            upcomingSessions = allSessions.filter {
+                it.status == SessionStatus.PLANNED && it.plannedEpochDay in end..today.plusDays(14).toEpochDay()
+            }.map(::reportSession),
             readiness = dao.getReadiness().filter { it.epochDay in start..end }.map {
                 ReportReadiness(
                     epochDay = it.epochDay,
@@ -361,6 +355,23 @@ class MountainFormRepository(
         }
         return json.encodeToString(report)
     }
+
+    private fun reportSession(session: TrainingSessionEntity) = ReportSession(
+        id = session.id,
+        plannedEpochDay = session.plannedEpochDay,
+        title = session.title,
+        type = session.type,
+        status = session.status,
+        targetRpe = session.targetRpe,
+        actualRpe = session.actualRpe,
+        actualDurationSeconds = session.actualDurationSeconds,
+        durationStatus = when {
+            session.status != SessionStatus.COMPLETED -> "NOT_APPLICABLE"
+            durationLooksImplausible(session.actualDurationSeconds, session.durationMinutes) -> "SUSPECT"
+            else -> "RECORDED"
+        },
+        notes = session.completionNotes,
+    )
 
     suspend fun exportBackup(): String {
         val settings = dao.getSettings() ?: AppSettingsEntity()
@@ -459,22 +470,45 @@ class MountainFormRepository(
         )
     }
 
-    suspend fun previewPlan(rawJson: String): ImportPreview {
-        val plan = json.decodeFromString<PlanEnvelope>(rawJson)
-        require(plan.schemaVersion == 1) { "Неподдерживаемая версия схемы: ${plan.schemaVersion}" }
-        require(plan.sessions.isNotEmpty()) { "План не содержит тренировок" }
-        require(plan.sessions.all { it.steps.isNotEmpty() }) {
+    suspend fun previewPlan(rawJson: String, today: LocalDate = LocalDate.now()): ImportPreview {
+        val decodedPlan = json.decodeFromString<PlanEnvelope>(rawJson)
+        require(decodedPlan.schemaVersion == 1) { "Неподдерживаемая версия схемы: ${decodedPlan.schemaVersion}" }
+        require(decodedPlan.sessions.isNotEmpty()) { "План не содержит тренировок" }
+        require(decodedPlan.sessions.all { it.steps.isNotEmpty() }) {
             "Каждая тренировка должна содержать хотя бы одно упражнение"
         }
         require(
-            (plan.replacePlannedFromEpochDay == null) == (plan.replacePlannedThroughEpochDay == null),
+            (decodedPlan.replacePlannedFromEpochDay == null) == (decodedPlan.replacePlannedThroughEpochDay == null),
         ) { "Диапазон замены будущего плана задан не полностью" }
-        if (plan.replacePlannedFromEpochDay != null && plan.replacePlannedThroughEpochDay != null) {
-            require(plan.replacePlannedFromEpochDay <= plan.replacePlannedThroughEpochDay) {
+        if (decodedPlan.replacePlannedFromEpochDay != null && decodedPlan.replacePlannedThroughEpochDay != null) {
+            require(decodedPlan.replacePlannedFromEpochDay <= decodedPlan.replacePlannedThroughEpochDay) {
                 "Некорректный диапазон замены будущего плана"
             }
         }
-        val existing = dao.getSessions().associateBy { it.id }
+        val existingSessions = dao.getSessions()
+        val existing = existingSessions.associateBy { it.id }
+        val todayEpochDay = today.toEpochDay()
+        val completedEpochDays = existingSessions
+            .filter { it.status == SessionStatus.COMPLETED }
+            .mapTo(mutableSetOf()) { it.plannedEpochDay }
+        val protectedSessionCount = decodedPlan.sessions.count {
+            it.plannedEpochDay < todayEpochDay || it.plannedEpochDay in completedEpochDays
+        }
+        val futureSessions = decodedPlan.sessions.filter {
+            it.plannedEpochDay >= todayEpochDay && it.plannedEpochDay !in completedEpochDays
+        }
+        val replacementThrough = decodedPlan.replacePlannedThroughEpochDay
+        val replacementFrom = decodedPlan.replacePlannedFromEpochDay?.coerceAtLeast(todayEpochDay)
+        val hasFutureReplacement = replacementFrom != null &&
+            replacementThrough != null && replacementFrom <= replacementThrough
+        val plan = decodedPlan.copy(
+            replacePlannedFromEpochDay = replacementFrom.takeIf { hasFutureReplacement },
+            replacePlannedThroughEpochDay = replacementThrough.takeIf { hasFutureReplacement },
+            sessions = futureSessions,
+        )
+        require(plan.sessions.isNotEmpty()) {
+            "В предложении нет будущих тренировок: прошлое и выполненные дни защищены от изменений"
+        }
         val incomingIds = plan.sessions.mapTo(mutableSetOf()) { it.id }
         val removedPlanned = if (
             plan.replacePlannedFromEpochDay != null && plan.replacePlannedThroughEpochDay != null
@@ -500,7 +534,8 @@ class MountainFormRepository(
             added = plan.sessions.count { it.id !in existing },
             updated = plan.sessions.count { it.id in existing && existing.getValue(it.id).status == SessionStatus.PLANNED },
             removed = removedPlanned.size,
-            preservedHistory = plan.sessions.count { it.id in existing && existing.getValue(it.id).status != SessionStatus.PLANNED },
+            preservedHistory = protectedSessionCount +
+                plan.sessions.count { it.id in existing && existing.getValue(it.id).status != SessionStatus.PLANNED },
             conflicts = conflicts,
             changes = plan.sessions.mapNotNull { planned ->
                 val old = existing[planned.id]
@@ -545,8 +580,16 @@ class MountainFormRepository(
 
     suspend fun applyPlan(preview: ImportPreview) {
         require(preview.conflicts.isEmpty()) { "План содержит конфликты с активными ограничениями" }
-        val existing = dao.getSessions().associateBy { it.id }
-        val sessionsToApply = preview.plan.sessions.mapNotNull { planned ->
+        val existingSessions = dao.getSessions()
+        val existing = existingSessions.associateBy { it.id }
+        val todayEpochDay = LocalDate.now().toEpochDay()
+        val completedEpochDays = existingSessions
+            .filter { it.status == SessionStatus.COMPLETED }
+            .mapTo(mutableSetOf()) { it.plannedEpochDay }
+        val safePlanSessions = preview.plan.sessions.filter {
+            it.plannedEpochDay >= todayEpochDay && it.plannedEpochDay !in completedEpochDays
+        }
+        val sessionsToApply = safePlanSessions.mapNotNull { planned ->
             val old = existing[planned.id]
             if (old != null && old.status != SessionStatus.PLANNED) return@mapNotNull null
             TrainingSessionEntity(
@@ -564,13 +607,20 @@ class MountainFormRepository(
                 rescheduleReason = old?.rescheduleReason.orEmpty(),
             )
         }
+        val removedSessionIds = preview.removedSessionIds.filter { id ->
+            existing[id]?.let { it.status == SessionStatus.PLANNED && it.plannedEpochDay >= todayEpochDay } == true
+        }
+        require(sessionsToApply.isNotEmpty() || removedSessionIds.isNotEmpty()) {
+            "План больше не содержит применимых будущих изменений"
+        }
+        val appliedPlan = preview.plan.copy(sessions = safePlanSessions)
         val revision = PlanRevisionEntity(
-            id = preview.plan.planId,
+            id = appliedPlan.planId,
             importedAtEpochMillis = System.currentTimeMillis(),
-            schemaVersion = preview.plan.schemaVersion,
-            author = preview.plan.author,
-            reason = preview.plan.reason,
-            payloadJson = json.encodeToString(preview.plan),
+            schemaVersion = appliedPlan.schemaVersion,
+            author = appliedPlan.author,
+            reason = appliedPlan.reason,
+            payloadJson = json.encodeToString(appliedPlan),
             applied = true,
         )
         val resolvedCheckpoint = dao.getReviewCheckpoints().firstOrNull { it.status != ReviewStatus.RESOLVED }?.copy(
@@ -579,7 +629,7 @@ class MountainFormRepository(
         )
         dao.applyPlanChanges(
             sessions = sessionsToApply,
-            removedPlannedSessionIds = preview.removedSessionIds,
+            removedPlannedSessionIds = removedSessionIds,
             revision = revision,
             resolvedCheckpoint = resolvedCheckpoint,
         )
@@ -699,224 +749,22 @@ class MountainFormRepository(
                         completedEpochDays = completedEpochDays,
                     ),
                 ),
+                today,
             )
         }
         if (AgreedHybridPlan.isRelevant(today, existing.mapTo(mutableSetOf()) { it.id })) {
-            return previewPlan(json.encodeToString(AgreedHybridPlan.envelope()))
+            return previewPlan(json.encodeToString(AgreedHybridPlan.envelope()), today)
         }
-        val lastDate = maxOf(
-            today,
-            existing.maxOfOrNull { LocalDate.ofEpochDay(it.plannedEpochDay) } ?: today,
+        val lastPlannedDate = existing
+            .filter { it.status == SessionStatus.PLANNED && it.plannedEpochDay >= today.toEpochDay() }
+            .maxOfOrNull { LocalDate.ofEpochDay(it.plannedEpochDay) }
+        val currentPlanMessage = lastPlannedDate?.let {
+            " Текущий план действует до ${it.dayOfMonth.toString().padStart(2, '0')}.${it.monthValue.toString().padStart(2, '0')}."
+        }.orEmpty()
+        error(
+            "Новых согласованных изменений нет.$currentPlanMessage " +
+                "Следующий блок формируется после разбора выполненных тренировок.",
         )
-        val firstTuesday = lastDate.plusDays(1).with(TemporalAdjusters.nextOrSame(DayOfWeek.TUESDAY))
-        val sessions = buildList {
-            existing
-                .filter { it.status == SessionStatus.PLANNED }
-                .mapNotNull { current ->
-                    structuredLegacySteps(current)?.let { upgradedSteps ->
-                        PlanSession(
-                            id = current.id,
-                            plannedEpochDay = current.plannedEpochDay,
-                            title = current.title,
-                            type = current.type,
-                            phase = current.phase,
-                            objective = current.objective,
-                            durationMinutes = current.durationMinutes,
-                            targetRpe = current.targetRpe,
-                            steps = upgradedSteps,
-                        )
-                    }
-                }
-                .forEach(::add)
-            repeat(2) { weekIndex ->
-                val tuesday = firstTuesday.plusWeeks(weekIndex.toLong())
-                val friday = tuesday.with(TemporalAdjusters.next(DayOfWeek.FRIDAY))
-                val sunday = tuesday.with(TemporalAdjusters.next(DayOfWeek.SUNDAY))
-                val deload = weekIndex == 3
-                val strengthRpe = if (deload) 4 else 5
-                val longMinutes = listOf(75, 85, 95, 70)[weekIndex]
-                add(
-                    PlanSession(
-                        id = "base-strength-${tuesday.toEpochDay()}",
-                        plannedEpochDay = tuesday.toEpochDay(),
-                        title = if (deload) "Облегчённая силовая + core" else "Ноги, задняя цепь и core",
-                        type = "STRENGTH",
-                        phase = "База для гор и бега",
-                        objective = "Сохранять силу ног и стабильность без отказа и без нагрузки на плечо",
-                        durationMinutes = if (deload) 60 else 75,
-                        targetRpe = strengthRpe,
-                        steps = listOf(
-                            ExerciseStep(
-                                "bike", "Велотренажёр", "10 минут легко", "Постепенная разминка",
-                                blockId = "warmup", blockTitle = "Разминка", blockType = WorkoutBlockType.AEROBIC, workSeconds = 600,
-                            ),
-                            ExerciseStep(
-                                "box-squat", "Присед до высокой опоры", if (deload) "2 × 8, RPE 4" else "3 × 8, RPE 5",
-                                "Колено по линии стопы", restSeconds = 75, blockId = "main", blockTitle = "Основная сила",
-                                sets = if (deload) 2 else 3, reps = 8,
-                            ),
-                            ExerciseStep(
-                                "bridge", "Ягодичный мост", if (deload) "2 × 10, RPE 4" else "3 × 10, RPE 5",
-                                "Руки лежат без боли; пауза наверху", restSeconds = 75, blockId = "main", blockTitle = "Основная сила",
-                                exerciseId = "bridge", illustrationKey = "glute-bridge",
-                                sets = if (deload) 2 else 3, reps = 10,
-                            ),
-                            ExerciseStep(
-                                "calf", "Подъём на носки", if (deload) "2 × 12" else "3 × 12", "Медленное опускание",
-                                restSeconds = 15, blockId = "accessory", blockTitle = "Core и аксессуары", blockType = WorkoutBlockType.CIRCUIT,
-                                rounds = if (deload) 2 else 3, reps = 12,
-                            ),
-                            ExerciseStep(
-                                "core", "Антиразгибание лёжа", if (deload) "2 × 6 на сторону" else "3 × 8 на сторону", "Рёбра и таз неподвижны",
-                                blockId = "accessory", blockTitle = "Core и аксессуары", blockType = WorkoutBlockType.CIRCUIT,
-                                rounds = if (deload) 2 else 3, reps = if (deload) 6 else 8, restAfterRoundSeconds = 60,
-                            ),
-                        ),
-                    ),
-                )
-                add(
-                    PlanSession(
-                        id = "base-run-${friday.toEpochDay()}",
-                        plannedEpochDay = friday.toEpochDay(),
-                        title = if (deload) "Лёгкий бег в разговорном темпе" else "Бег / ходьба: базовые интервалы",
-                        type = "RUN",
-                        phase = "База для гор и бега",
-                        objective = "Постепенно создавать беговую базу для полумарафона",
-                        durationMinutes = listOf(50, 55, 60, 45)[weekIndex],
-                        targetRpe = if (deload) 3 else 4,
-                        steps = listOf(
-                            ExerciseStep(
-                                "walk-warmup", "Разминка ходьбой", "10 минут", "Ровная поверхность",
-                                blockId = "warmup", blockTitle = "Разминка", blockType = WorkoutBlockType.AEROBIC, workSeconds = 600,
-                            ),
-                            ExerciseStep(
-                                "run-walk", "Лёгкий бег / ходьба", if (deload) "25 минут легко" else "${5 + weekIndex} × (4 мин бег + 1 мин ходьба)",
-                                "Разговорный темп; остановиться при боли", restSeconds = if (deload) 0 else 60,
-                                blockId = "run", blockTitle = "Беговой блок", blockType = WorkoutBlockType.INTERVAL,
-                                sets = if (deload) 1 else 5 + weekIndex, workSeconds = if (deload) 1500 else 240,
-                            ),
-                            ExerciseStep(
-                                "walk-cooldown", "Заминка ходьбой", "5–10 минут", "Отметить ощущения сразу и утром",
-                                blockId = "cooldown", blockTitle = "Заминка", blockType = WorkoutBlockType.AEROBIC, workSeconds = 600,
-                            ),
-                        ),
-                    ),
-                )
-                add(
-                    PlanSession(
-                        id = "base-endurance-${sunday.toEpochDay()}",
-                        plannedEpochDay = sunday.toEpochDay(),
-                        title = if (deload) "Восстановительная длинная ходьба" else "Длинная ходьба с уклоном",
-                        type = "AEROBIC",
-                        phase = "База для гор и бега",
-                        objective = if (profile.shoulderRestrictionActive) {
-                            "Длительная работа без рюкзака, пока активно ограничение плеча"
-                        } else {
-                            "Длительная работа для гор; рюкзак не добавлять без отдельного решения"
-                        },
-                        durationMinutes = longMinutes,
-                        targetRpe = if (deload) 3 else 4,
-                        steps = listOf(
-                            ExerciseStep(
-                                "walk", "Ходьба или дорожка с уклоном", "$longMinutes минут, RPE ${if (deload) 3 else 4}",
-                                "Ровно, без тяжёлого рюкзака и без длинных спусков", blockId = "endurance", blockTitle = "Длительная работа",
-                                blockType = WorkoutBlockType.AEROBIC, workSeconds = longMinutes * 60,
-                            ),
-                            ExerciseStep(
-                                "breathing", "Дыхание и контроль рёбер", "3 × 5 циклов", "Длинный спокойный выдох",
-                                blockId = "cooldown", blockTitle = "Заминка", sets = 3, reps = 5,
-                            ),
-                        ),
-                    ),
-                )
-            }
-        }
-        val envelope = PlanEnvelope(
-            planId = "base-block-${firstTuesday.toEpochDay()}",
-            author = "Горная форма",
-            reason = "Структура оставшихся встроенных тренировок и резерв на 14 дней: основные силовые упражнения отдельно, аксессуары и core по кругу. Это предложение применяется только после подтверждения; при боли или плохом самочувствии нагрузка блокируется.",
-            generatedAtEpochMillis = System.currentTimeMillis(),
-            sessions = sessions,
-        )
-        return previewPlan(json.encodeToString(envelope))
-    }
-
-    private fun structuredLegacySteps(session: TrainingSessionEntity): List<ExerciseStep>? {
-        val current = decodeSteps(session)
-        if (current.isEmpty() || current.any { it.blockId != "main" || it.blockType != WorkoutBlockType.STRAIGHT }) return null
-        return when {
-            session.id.startsWith("lower-core-") -> current.map { step ->
-                when (step.id) {
-                    "bike" -> step.copy(
-                        blockId = "warmup", blockTitle = "Разминка",
-                        blockType = WorkoutBlockType.AEROBIC, workSeconds = 600,
-                    )
-                    "box-squat" -> step.copy(
-                        restSeconds = 75, blockId = "squat", blockTitle = "Основная сила: присед",
-                        sets = 3, reps = 8,
-                    )
-                    "hinge" -> step.copy(
-                        id = "bridge", title = "Ягодичный мост", prescription = "3 × 10, RPE 5",
-                        instructions = "Руки лежат без боли; пауза наверху",
-                        exerciseId = "bridge", illustrationKey = "glute-bridge",
-                        restSeconds = 75, blockId = "bridge", blockTitle = "Основная сила: ягодицы",
-                        sets = 3, reps = 10,
-                    )
-                    "calf" -> step.copy(
-                        restSeconds = 15, blockId = "accessory", blockTitle = "Core и аксессуары",
-                        blockType = WorkoutBlockType.CIRCUIT, rounds = 3, reps = 12,
-                    )
-                    "core" -> step.copy(
-                        blockId = "accessory", blockTitle = "Core и аксессуары",
-                        blockType = WorkoutBlockType.CIRCUIT, rounds = 3, reps = 8, restAfterRoundSeconds = 60,
-                    )
-                    "cooldown" -> step.copy(
-                        blockId = "cooldown", blockTitle = "Заминка",
-                        blockType = WorkoutBlockType.AEROBIC, workSeconds = 480,
-                    )
-                    else -> step
-                }
-            }
-            session.id.startsWith("run-baseline-") -> current.map { step ->
-                when (step.id) {
-                    "walk-warmup" -> step.copy(
-                        blockId = "warmup", blockTitle = "Разминка",
-                        blockType = WorkoutBlockType.AEROBIC, workSeconds = 600,
-                    )
-                    "run-walk" -> step.copy(
-                        restSeconds = 120, blockId = "run", blockTitle = "Бег / ходьба",
-                        blockType = WorkoutBlockType.INTERVAL, sets = 6, workSeconds = 180,
-                    )
-                    "walk-cooldown" -> step.copy(
-                        blockId = "cooldown", blockTitle = "Заминка",
-                        blockType = WorkoutBlockType.AEROBIC, workSeconds = 300,
-                    )
-                    else -> step
-                }
-            }
-            session.id.startsWith("easy-aerobic-") -> current.map { step ->
-                when (step.id) {
-                    "warmup" -> step.copy(
-                        blockId = "warmup", blockTitle = "Разминка",
-                        blockType = WorkoutBlockType.AEROBIC, workSeconds = 600,
-                    )
-                    "aerobic" -> step.copy(
-                        blockId = "aerobic", blockTitle = "Аэробная работа",
-                        blockType = WorkoutBlockType.AEROBIC, workSeconds = 2400,
-                    )
-                    "bridge" -> step.copy(
-                        restSeconds = 15, blockId = "core", blockTitle = "Core по кругу",
-                        blockType = WorkoutBlockType.CIRCUIT, rounds = 3, reps = 10,
-                    )
-                    "side-core" -> step.copy(
-                        blockId = "core", blockTitle = "Core по кругу",
-                        blockType = WorkoutBlockType.CIRCUIT, rounds = 3, workSeconds = 20, restAfterRoundSeconds = 45,
-                    )
-                    else -> step
-                }
-            }
-            else -> null
-        }
     }
 
     private fun seedSessions(today: LocalDate): List<TrainingSessionEntity> {

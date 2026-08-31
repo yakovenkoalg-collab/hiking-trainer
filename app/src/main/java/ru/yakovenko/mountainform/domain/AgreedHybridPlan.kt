@@ -18,7 +18,7 @@ object AgreedHybridPlan {
     )
 
     fun isRelevant(today: LocalDate, existingSessionIds: Set<String>): Boolean =
-        !today.isAfter(endDate) && !existingSessionIds.containsAll(sessionIds)
+        today.isBefore(LocalDate.of(2026, 8, 30)) && !existingSessionIds.containsAll(sessionIds)
 
     fun envelope(generatedAtEpochMillis: Long = System.currentTimeMillis()): PlanEnvelope = PlanEnvelope(
         planId = "agreed-hybrid-${startDate.toEpochDay()}",

@@ -50,9 +50,9 @@ object ProgressedHybridPlan {
             "Верх тела пока не включён: сначала нужно отметить очное разрешение специалиста в настройках ограничения плеча."
         }
         return PlanEnvelope(
-            planId = "progressed-hybrid-${replaceFrom.toEpochDay()}-${if (includeClearedUpperBody) "upper" else "safe"}",
+            planId = "progressed-hybrid-v2-${replaceFrom.toEpochDay()}-${if (includeClearedUpperBody) "upper" else "safe"}",
             author = "Горная форма · согласовано в чате",
-            reason = "Двухнедельный блок после велосипеда и слишком лёгкой работы ног: две обязательные лёгкие пробежки и одна опциональная в неделю, одна прогрессивная силовая для ног и core. $upperReason Нагрузка предлагается к применению только после просмотра изменений.",
+            reason = "Скорректированный блок после тренировки 30 августа: лёгкая работа 1 сентября, усиленная домашняя гибридная тренировка 3 сентября вместо пятничной тренировки, затем спокойное продолжение беговой и силовой базы. $upperReason Нагрузка предлагается к применению только после просмотра изменений.",
             generatedAtEpochMillis = generatedAtEpochMillis,
             replacePlannedFromEpochDay = replaceFrom.toEpochDay(),
             replacePlannedThroughEpochDay = endDate.toEpochDay(),
@@ -63,13 +63,73 @@ object ProgressedHybridPlan {
     private fun sessions(includeUpper: Boolean): List<PlanSession> = listOf(
         longRun(LocalDate.of(2026, 8, 30), 55, 40),
         runAndCore(LocalDate.of(2026, 9, 1), 55, 30, 2),
-        recoveryRun(LocalDate.of(2026, 9, 3), 30),
-        strength(LocalDate.of(2026, 9, 4), includeUpper, secondWeek = false),
+        homeRunAndStrength(LocalDate.of(2026, 9, 3)),
         longRun(LocalDate.of(2026, 9, 6), 60, 45),
         runAndCore(LocalDate.of(2026, 9, 8), 60, 35, 3),
         recoveryRun(LocalDate.of(2026, 9, 10), 30),
         strength(LocalDate.of(2026, 9, 11), includeUpper, secondWeek = true),
         longRun(LocalDate.of(2026, 9, 13), 65, 50),
+    )
+
+    private fun homeRunAndStrength(date: LocalDate) = PlanSession(
+        id = "progress-home-hybrid-${date.toEpochDay()}",
+        plannedEpochDay = date.toEpochDay(),
+        title = "Лёгкий бег + домашние ноги и core",
+        type = "HYBRID",
+        phase = "Гибридная база",
+        objective = "Объединить бег и более ощутимую работу ног перед днём без тренировки, не нагружая плечо",
+        durationMinutes = 70,
+        targetRpe = 5,
+        steps = listOf(
+            aerobicStep("warmup", "Разминка ходьбой", "5 минут", "walk", 300, "Разминка"),
+            aerobicStep(
+                "easy-run", "Лёгкий непрерывный бег", "30 минут · разговорный темп, RPE 3–4",
+                "run-walk", 1_800, "Бег",
+                "Не ускоряйтесь ради темпа. Перейдите на шаг при боли, необычной одышке или ухудшении техники.",
+            ),
+            ExerciseStep(
+                id = "optional-run", title = "Опциональное продолжение бега", prescription = "До 5 минут · RPE 3–4",
+                instructions = "Добавьте только при свободном дыхании, нормальной технике и отсутствии боли.",
+                required = false, exerciseId = "run-walk", illustrationKey = "run-walk", blockId = "run",
+                blockTitle = "Бег", blockType = WorkoutBlockType.AEROBIC, workSeconds = 300,
+            ),
+            aerobicStep("cooldown", "Заминка ходьбой", "5 минут", "walk", 300, "Переход к силовой части"),
+            ExerciseStep(
+                id = "box-squat", title = "Медленный присед до стула", prescription = "3 × 12 · 3 секунды вниз",
+                instructions = "Работайте с весом тела. Колени идут по линии стоп; руки остаются расслабленными.",
+                exerciseId = "box-squat", illustrationKey = "box-squat", blockId = "home-circuit",
+                blockTitle = "Домашний круг", blockType = WorkoutBlockType.CIRCUIT,
+                rounds = 3, reps = 12, restSeconds = 15,
+            ),
+            ExerciseStep(
+                id = "step-down", title = "Медленное зашагивание вниз", prescription = "3 × 8 на ногу · 3 секунды вниз",
+                instructions = "Используйте низкую устойчивую ступень. Остановитесь при боли сзади колена.",
+                exerciseId = "step-down", illustrationKey = "step-down", blockId = "home-circuit",
+                blockTitle = "Домашний круг", blockType = WorkoutBlockType.CIRCUIT,
+                rounds = 3, reps = 8, restSeconds = 15,
+            ),
+            ExerciseStep(
+                id = "bridge", title = "Ягодичный мост на одной ноге", prescription = "3 × 10 на ногу · пауза 2 секунды",
+                instructions = "Руки лежат в безболезненном положении; таз не разворачивайте.",
+                exerciseId = "bridge", illustrationKey = "glute-bridge", blockId = "home-circuit",
+                blockTitle = "Домашний круг", blockType = WorkoutBlockType.CIRCUIT,
+                rounds = 3, reps = 10, restSeconds = 15,
+            ),
+            ExerciseStep(
+                id = "calf", title = "Подъём на носки", prescription = "3 × 15",
+                instructions = "Пауза наверху, медленное опускание; опора рукой только для равновесия.",
+                exerciseId = "calf", illustrationKey = "calf-raise", blockId = "home-circuit",
+                blockTitle = "Домашний круг", blockType = WorkoutBlockType.CIRCUIT,
+                rounds = 3, reps = 15, restSeconds = 15,
+            ),
+            ExerciseStep(
+                id = "core", title = "Антиразгибание лёжа", prescription = "3 × 8 на сторону",
+                instructions = "Руки расслаблены; поясница не прогибается. Гирю 16 кг до визита к врачу не используйте.",
+                exerciseId = "core", illustrationKey = "dead-bug-legs", blockId = "home-circuit",
+                blockTitle = "Домашний круг", blockType = WorkoutBlockType.CIRCUIT,
+                rounds = 3, reps = 8, restAfterRoundSeconds = 75,
+            ),
+        ),
     )
 
     private fun longRun(date: LocalDate, totalMinutes: Int, runMinutes: Int) = PlanSession(
