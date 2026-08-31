@@ -1,7 +1,7 @@
 {
-  "versionCode": 14,
-  "versionName": "0.3.11",
-  "apkUrl": "https://github.com/yakovenkoalg-collab/hiking-trainer/releases/download/v0.3.11/mountain-form-0.3.11.apk",
-  "sha256": "a03bcacbd27385e6fc721dfb7a255d40c8a09b87c2038d41cec8bbc043b87bf4",
-  "notes": "Несколько Garmin-записей на одну тренировку, новый гибридный план, безопасный возврат нагрузки на плечо, новые иллюстрации и упрощённый активный экран с надёжными таймерами."
+  "versionCode": 15,
+  "versionName": "0.3.12",
+  "apkUrl": "https://github.com/yakovenkoalg-collab/hiking-trainer/releases/download/v0.3.12/mountain-form-0.3.12.apk",
+  "sha256": "64943442426a387870faad94ba9c0cfe79dd99ea51bebf427ca3b10d84790e81",
+  "notes": "Безопасное обновление согласованного плана без дублей и изменений прошлого, усиленная домашняя тренировка в четверг, понятная проверка плана и улучшенный отчёт с предстоящими тренировками."
 }
