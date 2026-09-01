@@ -69,16 +69,16 @@ class ProgressedHybridPlanTest {
             today = LocalDate.of(2026, 8, 28),
             generatedAtEpochMillis = 1,
         )
-        val safeIds = beforeClearance.sessions.mapTo(mutableSetOf()) { it.id }
+        val safeSessions = beforeClearance.sessions.associate { it.id to it.plannedEpochDay }
 
         assertFalse(
             ProgressedHybridPlan.isRelevant(
-                LocalDate.of(2026, 8, 28), safeIds, includeClearedUpperBody = false,
+                LocalDate.of(2026, 8, 28), safeSessions, includeClearedUpperBody = false,
             ),
         )
         assertTrue(
             ProgressedHybridPlan.isRelevant(
-                LocalDate.of(2026, 9, 5), safeIds, includeClearedUpperBody = true,
+                LocalDate.of(2026, 9, 5), safeSessions, includeClearedUpperBody = true,
             ),
         )
 
@@ -90,6 +90,26 @@ class ProgressedHybridPlanTest {
         assertTrue(refreshed.sessions.all { it.plannedEpochDay >= LocalDate.of(2026, 9, 5).toEpochDay() })
         assertTrue(refreshed.sessions.any { it.id.endsWith("-upper") })
         assertFalse(refreshed.sessions.any { it.plannedEpochDay == LocalDate.of(2026, 9, 4).toEpochDay() })
+    }
+
+    @Test
+    fun proposalRemainsRelevantWhenAllExpectedSessionsExistButStaleFridayRemains() {
+        val today = LocalDate.of(2026, 9, 1)
+        val corrected = ProgressedHybridPlan.envelope(
+            includeClearedUpperBody = false,
+            today = today,
+            generatedAtEpochMillis = 1,
+        )
+        val sessionsWithStaleFriday = corrected.sessions.associate { it.id to it.plannedEpochDay } +
+            ("progress-strength-${LocalDate.of(2026, 9, 4).toEpochDay()}" to LocalDate.of(2026, 9, 4).toEpochDay())
+
+        assertTrue(
+            ProgressedHybridPlan.isRelevant(
+                today = today,
+                existingPlannedSessions = sessionsWithStaleFriday,
+                includeClearedUpperBody = false,
+            ),
+        )
     }
 
     @Test

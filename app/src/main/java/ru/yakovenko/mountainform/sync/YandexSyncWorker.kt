@@ -32,7 +32,11 @@ class YandexSyncWorker(
             )
             Result.success()
         }.getOrElse { error ->
-            app.repository.updateSettings(settings.copy(lastSyncMessage = error.message ?: "Ожидается сеть для Яндекс Диска"))
+            app.repository.updateSettings(
+                settings.copy(
+                    lastSyncMessage = "Ошибка автообмена: ${error.message ?: "ожидается сеть для Яндекс Диска"}",
+                ),
+            )
             if (runAttemptCount < 5) Result.retry() else Result.failure()
         }
     }

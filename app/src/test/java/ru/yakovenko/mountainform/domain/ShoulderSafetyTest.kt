@@ -15,6 +15,19 @@ class ShoulderSafetyTest {
     }
 
     @Test
+    fun safetyWarningInInstructionsDoesNotBecomeAFalseConflict() {
+        assertFalse(
+            ShoulderSafety.conflicts(
+                step(
+                    "core",
+                    "Антиразгибание лёжа",
+                    "Руки расслаблены. Гирю 16 кг до визита к врачу не используйте.",
+                ),
+            ),
+        )
+    }
+
+    @Test
     fun therapistClearedExerciseNeedsExplicitLoadPhase() {
         val clearedExercise = step(
             "row",

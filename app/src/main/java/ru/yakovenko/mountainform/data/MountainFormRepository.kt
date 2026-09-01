@@ -529,32 +529,44 @@ class MountainFormRepository(
                 if (shoulderConflict) "${session.title}: ${step.title} конфликтует с ограничением плеча" else null
             }
         }
+        val changes = plan.sessions.mapNotNull { planned ->
+            val old = existing[planned.id]
+            if (old != null && old.status != SessionStatus.PLANNED) return@mapNotNull null
+            if (old != null && matchesPlannedSession(old, planned)) return@mapNotNull null
+            PlanSessionChange(
+                before = old?.let(::sessionSummary),
+                after = PlanSessionSummary(
+                    plannedEpochDay = planned.plannedEpochDay,
+                    title = planned.title,
+                    durationMinutes = planned.durationMinutes,
+                    targetRpe = planned.targetRpe,
+                    exercises = planned.steps.map(::exerciseSummary),
+                ),
+            )
+        }
         return ImportPreview(
             plan = plan,
-            added = plan.sessions.count { it.id !in existing },
-            updated = plan.sessions.count { it.id in existing && existing.getValue(it.id).status == SessionStatus.PLANNED },
+            added = changes.count { it.before == null },
+            updated = changes.count { it.before != null },
             removed = removedPlanned.size,
             preservedHistory = protectedSessionCount +
                 plan.sessions.count { it.id in existing && existing.getValue(it.id).status != SessionStatus.PLANNED },
             conflicts = conflicts,
-            changes = plan.sessions.mapNotNull { planned ->
-                val old = existing[planned.id]
-                if (old != null && old.status != SessionStatus.PLANNED) return@mapNotNull null
-                PlanSessionChange(
-                    before = old?.let(::sessionSummary),
-                    after = PlanSessionSummary(
-                        plannedEpochDay = planned.plannedEpochDay,
-                        title = planned.title,
-                        durationMinutes = planned.durationMinutes,
-                        targetRpe = planned.targetRpe,
-                        exercises = planned.steps.map(::exerciseSummary),
-                    ),
-                )
-            },
+            changes = changes,
             removedSessions = removedPlanned.map(::sessionSummary),
             removedSessionIds = removedPlanned.map { it.id },
         )
     }
+
+    private fun matchesPlannedSession(existing: TrainingSessionEntity, planned: PlanSession): Boolean =
+        existing.plannedEpochDay == planned.plannedEpochDay &&
+            existing.title == planned.title &&
+            existing.type == planned.type &&
+            existing.phase == planned.phase &&
+            existing.objective == planned.objective &&
+            existing.durationMinutes == planned.durationMinutes &&
+            existing.targetRpe == planned.targetRpe &&
+            runCatching { json.decodeFromString<List<ExerciseStep>>(existing.stepsJson) }.getOrNull() == planned.steps
 
     private fun sessionSummary(session: TrainingSessionEntity): PlanSessionSummary {
         val steps = runCatching { json.decodeFromString<List<ExerciseStep>>(session.stepsJson) }.getOrDefault(emptyList())
@@ -736,7 +748,9 @@ class MountainFormRepository(
         if (
             ProgressedHybridPlan.isRelevant(
                 today = today,
-                existingSessionIds = existing.mapTo(mutableSetOf()) { it.id },
+                existingPlannedSessions = existing
+                    .filter { it.status == SessionStatus.PLANNED }
+                    .associate { it.id to it.plannedEpochDay },
                 includeClearedUpperBody = includeClearedUpperBody,
                 completedEpochDays = completedEpochDays,
             )

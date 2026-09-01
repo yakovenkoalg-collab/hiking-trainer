@@ -41,8 +41,11 @@ import ru.yakovenko.mountainform.reminders.ReminderScheduler
 import ru.yakovenko.mountainform.sync.SharedFolderSyncManager
 import ru.yakovenko.mountainform.sync.SecureTokenStore
 import ru.yakovenko.mountainform.sync.YandexDiskSyncManager
+import ru.yakovenko.mountainform.sync.YandexSyncProgress
+import ru.yakovenko.mountainform.sync.YandexSyncStage
 import ru.yakovenko.mountainform.sync.YandexSyncWorker
 import ru.yakovenko.mountainform.update.AppUpdateManager
+import ru.yakovenko.mountainform.update.UpdateOperation
 import ru.yakovenko.mountainform.update.UpdateState
 import java.time.LocalDate
 
@@ -72,6 +75,18 @@ data class AppUiState(
         get() = sessions.firstOrNull {
             it.status == "PLANNED" && it.plannedEpochDay >= LocalDate.now().toEpochDay()
         } ?: sessions.firstOrNull { it.status == "PLANNED" }
+}
+
+data class DataSyncState(
+    val running: Boolean = false,
+    val stage: String = "",
+    val transferredBytes: Long = 0,
+    val totalBytes: Long? = null,
+) {
+    val progress: Float?
+        get() = totalBytes?.takeIf { it > 0 }?.let {
+            (transferredBytes.toDouble() / it.toDouble()).coerceIn(0.0, 1.0).toFloat()
+        }
 }
 
 class AppViewModel(
@@ -151,6 +166,7 @@ class AppViewModel(
     val backupPreview = MutableStateFlow<BackupPreview?>(null)
     val message = MutableStateFlow<String?>(null)
     val updateState = MutableStateFlow(UpdateState())
+    val syncState = MutableStateFlow(DataSyncState())
     val yandexConnected = MutableStateFlow(secureTokenStore.hasToken())
     private var pendingSharedPlanName: String? = null
     private var pendingSharedPlanJson: String? = null
@@ -373,9 +389,11 @@ class AppViewModel(
     fun clearWorkoutExecution(sessionId: String) = workoutExecutionStore.clear(sessionId)
 
     fun syncYandex() {
+        if (syncState.value.running) return
         val current = uiState.value.settings ?: AppSettingsEntity()
+        syncState.value = DataSyncState(running = true, stage = "Подготавливаем обмен…")
         viewModelScope.launch {
-            runCatching { yandexDiskSyncManager.sync(current.yandexRootPath) }
+            runCatching { yandexDiskSyncManager.sync(current.yandexRootPath, ::updateYandexSyncProgress) }
                 .onSuccess { result ->
                     pendingSharedPlanName = result.pendingPlanName
                     pendingSharedPlanJson = result.pendingPlanJson
@@ -383,20 +401,54 @@ class AppViewModel(
                     repository.updateSettings(
                         current.copy(lastSyncAtEpochMillis = System.currentTimeMillis(), lastSyncMessage = result.message),
                     )
+                    syncState.value = DataSyncState(stage = result.message, transferredBytes = 1, totalBytes = 1)
                     result.pendingPlanJson?.let(::previewImport)
                     message.value = result.message
                 }
-                .onFailure { message.value = it.message ?: "Ошибка Яндекс Диска" }
+                .onFailure {
+                    val errorMessage = "Ошибка синхронизации: ${it.message ?: "Яндекс Диск недоступен"}"
+                    repository.updateSettings(current.copy(lastSyncMessage = errorMessage))
+                    syncState.value = DataSyncState(stage = errorMessage)
+                    message.value = errorMessage
+                }
         }
     }
 
     fun createYandexBackup() {
+        if (syncState.value.running) return
         val current = uiState.value.settings ?: AppSettingsEntity()
+        syncState.value = DataSyncState(running = true, stage = "Подготавливаем резервную копию…")
         viewModelScope.launch {
-            runCatching { yandexDiskSyncManager.createBackup(current.yandexRootPath) }
-                .onSuccess { message.value = "Резервная копия $it создана на Яндекс Диске" }
-                .onFailure { message.value = it.message ?: "Не удалось создать копию" }
+            runCatching { yandexDiskSyncManager.createBackup(current.yandexRootPath, ::updateYandexSyncProgress) }
+                .onSuccess { name ->
+                    val resultMessage = "Резервная копия $name создана на Яндекс Диске"
+                    repository.updateSettings(current.copy(lastSyncMessage = resultMessage))
+                    syncState.value = DataSyncState(stage = resultMessage, transferredBytes = 1, totalBytes = 1)
+                    message.value = resultMessage
+                }
+                .onFailure {
+                    val errorMessage = "Ошибка резервной копии: ${it.message ?: "Яндекс Диск недоступен"}"
+                    repository.updateSettings(current.copy(lastSyncMessage = errorMessage))
+                    syncState.value = DataSyncState(stage = errorMessage)
+                    message.value = errorMessage
+                }
         }
+    }
+
+    private fun updateYandexSyncProgress(progress: YandexSyncProgress) {
+        val stage = when (progress.stage) {
+            YandexSyncStage.PREPARING -> "Проверяем папки на Яндекс Диске…"
+            YandexSyncStage.UPLOADING_REPORT -> "Загружаем актуальный отчёт…"
+            YandexSyncStage.CHECKING_PLANS -> "Проверяем входящие планы…"
+            YandexSyncStage.DOWNLOADING_PLAN -> "Загружаем найденный план…"
+            YandexSyncStage.UPLOADING_BACKUP -> "Загружаем резервную копию…"
+        }
+        syncState.value = DataSyncState(
+            running = true,
+            stage = stage,
+            transferredBytes = progress.transferredBytes,
+            totalBytes = progress.totalBytes,
+        )
     }
 
     fun selectSharedFolder(uri: Uri) {
@@ -647,19 +699,25 @@ class AppViewModel(
 
     private suspend fun refreshUpdateState(showErrors: Boolean) {
         updateState.value = updateState.value.copy(
-            checking = true,
+            operation = UpdateOperation.CHECKING,
             message = if (showErrors) "Проверяем обновления…" else updateState.value.message,
         )
         runCatching { appUpdateManager.check() }
             .onSuccess { release ->
+                val downloadedFile = release?.let { appUpdateManager.findDownloaded(it) }
                 updateState.value = UpdateState(
                     release = release,
+                    downloadedFile = downloadedFile,
+                    downloadedBytes = downloadedFile?.length() ?: 0,
+                    totalBytes = downloadedFile?.length(),
                     message = if (release == null) {
                         if (ru.yakovenko.mountainform.BuildConfig.UPDATE_MANIFEST_URL.isBlank()) {
                             "Канал обновлений будет подключён при первой публикации"
                         } else {
                             "Установлена актуальная версия"
                         }
+                    } else if (downloadedFile != null) {
+                        "APK ${release.versionName} уже скачан, проверен и готов к установке"
                     } else {
                         "Доступна версия ${release.versionName}"
                     },
@@ -667,7 +725,7 @@ class AppViewModel(
             }
             .onFailure { error ->
                 updateState.value = updateState.value.copy(
-                    checking = false,
+                    operation = UpdateOperation.IDLE,
                     message = if (showErrors) "Ошибка проверки: ${error.message}" else updateState.value.message,
                 )
             }
@@ -676,12 +734,48 @@ class AppViewModel(
     fun downloadUpdate() {
         val release = updateState.value.release ?: return
         viewModelScope.launch {
-            updateState.value = updateState.value.copy(checking = true, message = "Скачиваем подписанный APK…")
-            runCatching { appUpdateManager.download(release) }
+            updateState.value = updateState.value.copy(
+                operation = UpdateOperation.DOWNLOADING,
+                downloadedFile = null,
+                downloadedBytes = 0,
+                totalBytes = null,
+                message = "Скачиваем подписанный APK…",
+            )
+            runCatching {
+                appUpdateManager.download(
+                    release = release,
+                    onProgress = { downloadedBytes, totalBytes ->
+                        updateState.value = updateState.value.copy(
+                            operation = UpdateOperation.DOWNLOADING,
+                            downloadedBytes = downloadedBytes,
+                            totalBytes = totalBytes,
+                        )
+                    },
+                    onVerifying = {
+                        updateState.value = updateState.value.copy(
+                            operation = UpdateOperation.VERIFYING,
+                            message = "Проверяем подпись и контрольную сумму APK…",
+                        )
+                    },
+                )
+            }
                 .onSuccess { file ->
-                    updateState.value = updateState.value.copy(checking = false, downloadedFile = file, message = "APK проверен и готов к установке")
+                    updateState.value = updateState.value.copy(
+                        operation = UpdateOperation.IDLE,
+                        downloadedFile = file,
+                        downloadedBytes = file.length(),
+                        totalBytes = file.length(),
+                        message = "APK проверен и готов к установке",
+                    )
                 }
-                .onFailure { updateState.value = updateState.value.copy(checking = false, message = "Ошибка скачивания: ${it.message}") }
+                .onFailure {
+                    updateState.value = updateState.value.copy(
+                        operation = UpdateOperation.IDLE,
+                        downloadedBytes = 0,
+                        totalBytes = null,
+                        message = "Ошибка скачивания: ${it.message}",
+                    )
+                }
         }
     }
 

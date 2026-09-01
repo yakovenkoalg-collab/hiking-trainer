@@ -24,12 +24,27 @@ data class ReleaseManifest(
     val notes: String,
 )
 
+enum class UpdateOperation {
+    IDLE,
+    CHECKING,
+    DOWNLOADING,
+    VERIFYING,
+}
+
 data class UpdateState(
-    val checking: Boolean = false,
+    val operation: UpdateOperation = UpdateOperation.IDLE,
     val release: ReleaseManifest? = null,
     val downloadedFile: File? = null,
+    val downloadedBytes: Long = 0,
+    val totalBytes: Long? = null,
     val message: String = if (BuildConfig.UPDATE_MANIFEST_URL.isBlank()) "Канал обновлений будет подключён при первой публикации" else "",
-)
+) {
+    val busy: Boolean get() = operation != UpdateOperation.IDLE
+    val downloadProgress: Float?
+        get() = totalBytes?.takeIf { it > 0 }?.let {
+            (downloadedBytes.toDouble() / it.toDouble()).coerceIn(0.0, 1.0).toFloat()
+        }
+}
 
 class AppUpdateManager(private val context: Context) {
     private val json = Json { ignoreUnknownKeys = false }
@@ -51,15 +66,37 @@ class AppUpdateManager(private val context: Context) {
         }
     }
 
-    suspend fun download(release: ReleaseManifest): File = withContext(Dispatchers.IO) {
-        val directory = File(context.filesDir, "updates").apply { mkdirs() }
-        val destination = File(directory, "mountain-form-${release.versionName}.apk")
+    suspend fun findDownloaded(release: ReleaseManifest): File? = withContext(Dispatchers.IO) {
+        updateFile(release).takeIf { it.isFile && sha256(it).equals(release.sha256, ignoreCase = true) }
+    }
+
+    suspend fun download(
+        release: ReleaseManifest,
+        onProgress: (downloadedBytes: Long, totalBytes: Long?) -> Unit = { _, _ -> },
+        onVerifying: () -> Unit = {},
+    ): File = withContext(Dispatchers.IO) {
+        val destination = updateFile(release)
         val connection = URL(release.apkUrl).openConnection() as HttpURLConnection
         connection.connectTimeout = 15_000
         connection.readTimeout = 30_000
         try {
             require(connection.responseCode in 200..299) { "HTTP ${connection.responseCode}" }
-            connection.inputStream.use { input -> destination.outputStream().use { input.copyTo(it) } }
+            val totalBytes = connection.contentLengthLong.takeIf { it > 0 }
+            var downloadedBytes = 0L
+            onProgress(downloadedBytes, totalBytes)
+            connection.inputStream.use { input ->
+                destination.outputStream().buffered().use { output ->
+                    val buffer = ByteArray(DEFAULT_BUFFER_SIZE)
+                    while (true) {
+                        val count = input.read(buffer)
+                        if (count < 0) break
+                        output.write(buffer, 0, count)
+                        downloadedBytes += count
+                        onProgress(downloadedBytes, totalBytes)
+                    }
+                }
+            }
+            onVerifying()
             val actual = sha256(destination)
             require(actual.equals(release.sha256, ignoreCase = true)) { "Контрольная сумма APK не совпадает" }
             destination
@@ -69,6 +106,11 @@ class AppUpdateManager(private val context: Context) {
         } finally {
             connection.disconnect()
         }
+    }
+
+    private fun updateFile(release: ReleaseManifest): File {
+        val directory = File(context.filesDir, "updates").apply { mkdirs() }
+        return File(directory, "mountain-form-${release.versionName}.apk")
     }
 
     fun install(file: File): Boolean {

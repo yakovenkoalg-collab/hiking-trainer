@@ -16,6 +16,7 @@ import org.junit.Test
 import ru.yakovenko.mountainform.data.AppSettingsEntity
 import ru.yakovenko.mountainform.data.UserProfileEntity
 import ru.yakovenko.mountainform.ui.AppUiState
+import ru.yakovenko.mountainform.ui.DataSyncState
 import ru.yakovenko.mountainform.ui.theme.MountainFormTheme
 
 class SettingsSafetyScreenTest {
@@ -64,6 +65,7 @@ class SettingsSafetyScreenTest {
                     onRestoreBackup = {},
                     yandexConnected = true,
                     yandexLoginConfigured = true,
+                    syncState = DataSyncState(),
                     onConnectYandex = {},
                     onDisconnectYandex = { disconnected = true },
                     onSyncYandex = {},
@@ -77,5 +79,39 @@ class SettingsSafetyScreenTest {
 
         composeRule.onNodeWithText("Отключить Яндекс Диск?").assertIsDisplayed()
         composeRule.runOnIdle { check(!disconnected) }
+    }
+
+    @Test
+    fun yandexSyncShowsProgressAndPreventsDuplicateStart() {
+        composeRule.setContent {
+            MountainFormTheme {
+                DataSyncScreen(
+                    settings = AppSettingsEntity(yandexSyncEnabled = true, yandexAccountLabel = "test"),
+                    onBack = {},
+                    onSelectFolder = {},
+                    onUpdateSettings = {},
+                    onSync = {},
+                    onCreateBackup = {},
+                    onRestoreBackup = {},
+                    yandexConnected = true,
+                    yandexLoginConfigured = true,
+                    syncState = DataSyncState(
+                        running = true,
+                        stage = "Загружаем актуальный отчёт…",
+                        transferredBytes = 10_240,
+                        totalBytes = 20_480,
+                    ),
+                    onConnectYandex = {},
+                    onDisconnectYandex = {},
+                    onSyncYandex = {},
+                    onCreateYandexBackup = {},
+                    onShareReport = {},
+                )
+            }
+        }
+
+        composeRule.onNodeWithText("Загружаем актуальный отчёт…").assertIsDisplayed()
+        composeRule.onNodeWithText("50%", substring = true).assertIsDisplayed()
+        composeRule.onNodeWithText("Выполняется…", substring = true).assertIsNotEnabled()
     }
 }

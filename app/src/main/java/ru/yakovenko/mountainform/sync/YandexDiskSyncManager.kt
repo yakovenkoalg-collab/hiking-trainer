@@ -13,6 +13,20 @@ import java.net.URI
 import java.net.URLEncoder
 import java.time.LocalDate
 
+enum class YandexSyncStage {
+    PREPARING,
+    UPLOADING_REPORT,
+    CHECKING_PLANS,
+    DOWNLOADING_PLAN,
+    UPLOADING_BACKUP,
+}
+
+data class YandexSyncProgress(
+    val stage: YandexSyncStage,
+    val transferredBytes: Long = 0,
+    val totalBytes: Long? = null,
+)
+
 class YandexDiskSyncManager(
     private val repository: MountainFormRepository,
     private val tokenStore: SecureTokenStore,
@@ -30,17 +44,29 @@ class YandexDiskSyncManager(
         }
     }
 
-    suspend fun sync(rootPath: String): SharedFolderSyncResult = withContext(Dispatchers.IO) {
+    suspend fun sync(
+        rootPath: String,
+        onProgress: (YandexSyncProgress) -> Unit = {},
+    ): SharedFolderSyncResult = withContext(Dispatchers.IO) {
         val token = requireToken()
         val root = normalizedRoot(rootPath)
+        onProgress(YandexSyncProgress(YandexSyncStage.PREPARING))
         ensureLayout(root, token)
-        upload("$root/reports/current-report.json", repository.exportReport(), token)
+        upload(
+            path = "$root/reports/current-report.json",
+            content = repository.exportReport(),
+            token = token,
+            stage = YandexSyncStage.UPLOADING_REPORT,
+            onProgress = onProgress,
+        )
+        onProgress(YandexSyncProgress(YandexSyncStage.CHECKING_PLANS))
         val pending = list("$root/plans/inbox", token)
             .filter { it.name.endsWith(".json", ignoreCase = true) }
             .maxByOrNull { it.modified }
         if (pending == null) {
             SharedFolderSyncResult("Отчёт отправлен на Яндекс Диск, новых планов нет")
         } else {
+            onProgress(YandexSyncProgress(YandexSyncStage.DOWNLOADING_PLAN))
             SharedFolderSyncResult(
                 message = "Отчёт отправлен, найден новый план ${pending.name}",
                 pendingPlanJson = download(pending.path, token),
@@ -49,12 +75,22 @@ class YandexDiskSyncManager(
         }
     }
 
-    suspend fun createBackup(rootPath: String): String = withContext(Dispatchers.IO) {
+    suspend fun createBackup(
+        rootPath: String,
+        onProgress: (YandexSyncProgress) -> Unit = {},
+    ): String = withContext(Dispatchers.IO) {
         val token = requireToken()
         val root = normalizedRoot(rootPath)
+        onProgress(YandexSyncProgress(YandexSyncStage.PREPARING))
         ensureLayout(root, token)
         val name = "mountain-form-backup-${LocalDate.now()}.json"
-        upload("$root/backups/$name", repository.exportBackup(), token)
+        upload(
+            path = "$root/backups/$name",
+            content = repository.exportBackup(),
+            token = token,
+            stage = YandexSyncStage.UPLOADING_BACKUP,
+            onProgress = onProgress,
+        )
         name
     }
 
@@ -99,7 +135,13 @@ class YandexDiskSyncManager(
         request("PUT", "/resources", token, mapOf("path" to path), allowedCodes = setOf(201, 409))
     }
 
-    private fun upload(path: String, content: String, token: String) {
+    private fun upload(
+        path: String,
+        content: String,
+        token: String,
+        stage: YandexSyncStage? = null,
+        onProgress: (YandexSyncProgress) -> Unit = {},
+    ) {
         val link = request(
             "GET",
             "/resources/upload",
@@ -107,7 +149,18 @@ class YandexDiskSyncManager(
             mapOf("path" to path, "overwrite" to "true"),
         )
         val href = json.parseToJsonElement(link).jsonObject.getValue("href").jsonPrimitive.content
-        absoluteRequest("PUT", href, null, content.toByteArray(Charsets.UTF_8), setOf(201, 202))
+        absoluteRequest(
+            method = "PUT",
+            url = href,
+            token = null,
+            body = content.toByteArray(Charsets.UTF_8),
+            allowedCodes = setOf(201, 202),
+            onUploadProgress = stage?.let { currentStage ->
+                { transferredBytes, totalBytes ->
+                    onProgress(YandexSyncProgress(currentStage, transferredBytes, totalBytes))
+                }
+            },
+        )
     }
 
     private fun download(path: String, token: String): String {
@@ -153,6 +206,7 @@ class YandexDiskSyncManager(
         token: String?,
         body: ByteArray?,
         allowedCodes: Set<Int>,
+        onUploadProgress: ((transferredBytes: Long, totalBytes: Long) -> Unit)? = null,
     ): String {
         val connection = URI(url).toURL().openConnection() as HttpURLConnection
         return try {
@@ -164,7 +218,17 @@ class YandexDiskSyncManager(
             if (body != null) {
                 connection.doOutput = true
                 connection.setRequestProperty("Content-Type", "application/json; charset=utf-8")
-                connection.outputStream.use { it.write(body) }
+                connection.setFixedLengthStreamingMode(body.size)
+                connection.outputStream.buffered().use { output ->
+                    var offset = 0
+                    onUploadProgress?.invoke(0, body.size.toLong())
+                    while (offset < body.size) {
+                        val count = minOf(DEFAULT_BUFFER_SIZE, body.size - offset)
+                        output.write(body, offset, count)
+                        offset += count
+                        onUploadProgress?.invoke(offset.toLong(), body.size.toLong())
+                    }
+                }
             }
             val code = connection.responseCode
             val stream = yandexResponseStream(connection, code)

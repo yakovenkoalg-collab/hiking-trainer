@@ -23,6 +23,7 @@ import androidx.compose.material3.Card
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
+import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Scaffold
@@ -41,6 +42,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import ru.yakovenko.mountainform.data.AppSettingsEntity
+import ru.yakovenko.mountainform.ui.DataSyncState
 import java.time.Instant
 import java.time.ZoneId
 import java.time.format.DateTimeFormatter
@@ -57,6 +59,7 @@ fun DataSyncScreen(
     onRestoreBackup: (Uri) -> Unit,
     yandexConnected: Boolean,
     yandexLoginConfigured: Boolean,
+    syncState: DataSyncState,
     onConnectYandex: (String) -> Unit,
     onDisconnectYandex: () -> Unit,
     onSyncYandex: () -> Unit,
@@ -109,11 +112,32 @@ fun DataSyncScreen(
                     Text("Яндекс Диск", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
                     if (yandexConnected) {
                         Text("Подключено · ${current.yandexAccountLabel.ifBlank { "Яндекс ID" }}", color = MaterialTheme.colorScheme.primary)
-                        Button(onClick = onSyncYandex, modifier = Modifier.fillMaxWidth()) {
+                        Button(
+                            onClick = onSyncYandex,
+                            enabled = !syncState.running,
+                            modifier = Modifier.fillMaxWidth(),
+                        ) {
                             Icon(Icons.Default.CloudSync, contentDescription = null)
-                            Text("  Синхронизировать")
+                            Text(if (syncState.running) "  Выполняется…" else "  Синхронизировать")
                         }
-                        TextButton(onClick = { showDisconnectConfirmation = true }, modifier = Modifier.fillMaxWidth()) { Text("Отключить") }
+                        if (syncState.running) {
+                            syncState.progress?.let { progress ->
+                                LinearProgressIndicator(progress = { progress }, modifier = Modifier.fillMaxWidth())
+                            } ?: LinearProgressIndicator(modifier = Modifier.fillMaxWidth())
+                            Text(syncState.stage, style = MaterialTheme.typography.bodySmall)
+                            if (syncState.transferredBytes > 0) {
+                                Text(
+                                    syncTransferText(syncState.transferredBytes, syncState.totalBytes),
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                )
+                            }
+                        }
+                        TextButton(
+                            onClick = { showDisconnectConfirmation = true },
+                            enabled = !syncState.running,
+                            modifier = Modifier.fillMaxWidth(),
+                        ) { Text("Отключить") }
                     } else {
                         Text(
                             "Для обмена без USB войдите с Яндекс ID.",
@@ -162,7 +186,10 @@ fun DataSyncScreen(
                 Card {
                     Column(Modifier.fillMaxWidth().padding(14.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
                         Text(
-                            if (current.lastSyncAtEpochMillis == null) "Состояние обмена" else "Последний обмен",
+                            if (
+                                current.lastSyncAtEpochMillis == null ||
+                                current.lastSyncMessage.startsWith("Ошибка", ignoreCase = true)
+                            ) "Состояние обмена" else "Последний обмен",
                             fontWeight = FontWeight.Bold,
                         )
                         if (current.lastSyncMessage.isNotBlank()) {
@@ -205,7 +232,11 @@ fun DataSyncScreen(
                     Column(Modifier.fillMaxWidth().padding(14.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                         Text("Резервные копии", fontWeight = FontWeight.Bold)
                         if (yandexConnected) {
-                            OutlinedButton(onClick = onCreateYandexBackup, modifier = Modifier.fillMaxWidth()) {
+                            OutlinedButton(
+                                onClick = onCreateYandexBackup,
+                                enabled = !syncState.running,
+                                modifier = Modifier.fillMaxWidth(),
+                            ) {
                                 Icon(Icons.Default.Backup, contentDescription = null)
                                 Text("  Копия на Яндекс Диске")
                             }
@@ -254,3 +285,10 @@ private fun formatSyncTime(epochMillis: Long): String =
     Instant.ofEpochMilli(epochMillis)
         .atZone(ZoneId.systemDefault())
         .format(DateTimeFormatter.ofPattern("dd.MM.yyyy HH:mm"))
+
+private fun syncTransferText(transferredBytes: Long, totalBytes: Long?): String {
+    val transferred = "%.1f КБ".format(transferredBytes / 1024.0)
+    val total = totalBytes?.let { "%.1f КБ".format(it / 1024.0) }
+    val percent = totalBytes?.takeIf { it > 0 }?.let { (transferredBytes * 100 / it).coerceIn(0, 100) }
+    return if (total == null || percent == null) transferred else "$transferred из $total · $percent%"
+}

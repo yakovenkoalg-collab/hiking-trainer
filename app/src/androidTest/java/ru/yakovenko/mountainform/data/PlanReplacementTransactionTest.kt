@@ -13,6 +13,7 @@ import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Test
+import ru.yakovenko.mountainform.domain.ProgressedHybridPlan
 import java.time.LocalDate
 
 class PlanReplacementTransactionTest {
@@ -193,6 +194,50 @@ class PlanReplacementTransactionTest {
             ),
             preview.removedSessionIds.toSet(),
         )
+    }
+
+    @Test
+    fun correctedPlanCanApplyAStaleFridayRemovalOnly() = runBlocking {
+        val today = LocalDate.of(2026, 9, 1)
+        dao.upsertProfile(profile())
+        val corrected = ProgressedHybridPlan.envelope(
+            includeClearedUpperBody = false,
+            today = today,
+            generatedAtEpochMillis = 1,
+        )
+        dao.upsertSessions(
+            corrected.sessions.map { planned ->
+                TrainingSessionEntity(
+                    id = planned.id,
+                    plannedEpochDay = planned.plannedEpochDay,
+                    title = planned.title,
+                    type = planned.type,
+                    phase = planned.phase,
+                    objective = planned.objective,
+                    durationMinutes = planned.durationMinutes,
+                    targetRpe = planned.targetRpe,
+                    stepsJson = Json.encodeToString(planned.steps),
+                )
+            },
+        )
+        val staleFridayId = "progress-strength-${LocalDate.of(2026, 9, 4).toEpochDay()}"
+        dao.upsertSession(
+            session(staleFridayId, SessionStatus.PLANNED).copy(
+                plannedEpochDay = LocalDate.of(2026, 9, 4).toEpochDay(),
+            ),
+        )
+        val repository = MountainFormRepository(dao)
+
+        val preview = repository.proposeNextBaseBlock(today)
+
+        assertTrue(preview.changes.isEmpty())
+        assertEquals(listOf(staleFridayId), preview.removedSessionIds)
+        assertTrue(preview.conflicts.isEmpty())
+
+        repository.applyPlan(preview)
+
+        assertNull(dao.getSession(staleFridayId))
+        assertTrue(corrected.sessions.all { dao.getSession(it.id) != null })
     }
 
     @Test

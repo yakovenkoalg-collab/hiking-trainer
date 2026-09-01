@@ -19,18 +19,23 @@ object ProgressedHybridPlan {
 
     fun isRelevant(
         today: LocalDate,
-        existingSessionIds: Set<String>,
+        existingPlannedSessions: Map<String, Long>,
         includeClearedUpperBody: Boolean,
         completedEpochDays: Set<Long> = emptySet(),
     ): Boolean {
         if (today.isAfter(endDate)) return false
+        val replacementFrom = maxOf(startDate, today).toEpochDay()
+        val replacementThrough = endDate.toEpochDay()
         val expectedIds = sessions(includeClearedUpperBody)
             .filter {
                 !LocalDate.ofEpochDay(it.plannedEpochDay).isBefore(today) &&
                     it.plannedEpochDay !in completedEpochDays
             }
             .mapTo(mutableSetOf()) { it.id }
-        return expectedIds.isNotEmpty() && !existingSessionIds.containsAll(expectedIds)
+        val actualIds = existingPlannedSessions
+            .filterValues { it in replacementFrom..replacementThrough && it !in completedEpochDays }
+            .keys
+        return expectedIds.isNotEmpty() && actualIds != expectedIds
     }
 
     fun envelope(

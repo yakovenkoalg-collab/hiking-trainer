@@ -56,7 +56,12 @@ object ShoulderSafety {
         if (CLEARANCE_TAG in step.restrictionTags && phaseIndex < clearanceIndex) {
             return ShoulderExerciseAccess.REQUIRES_CLEARANCE
         }
-        val description = "${step.title} ${step.instructions}".lowercase()
+        // Instructions often explain what must not be done (for example,
+        // "do not use a kettlebell"). Scanning them as if they described the
+        // prescribed load turns a safety warning into a false conflict. Legacy
+        // plans still get a conservative text fallback from the exercise title
+        // and prescription; current plans must use restrictionTags.
+        val description = "${step.title} ${step.prescription}".lowercase()
         val explicitlyPhased = CLEARANCE_TAG in step.restrictionTags || RETURNING_TAG in step.restrictionTags
         if (riskWords.any(description::contains) && phaseIndex < fullIndex && !explicitlyPhased) {
             return ShoulderExerciseAccess.BLOCKED

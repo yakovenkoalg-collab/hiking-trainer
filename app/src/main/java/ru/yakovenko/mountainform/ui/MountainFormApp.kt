@@ -85,6 +85,7 @@ fun MountainFormApp(
     val backupPreview by viewModel.backupPreview.collectAsStateWithLifecycle()
     val message by viewModel.message.collectAsStateWithLifecycle()
     val updateState by viewModel.updateState.collectAsStateWithLifecycle()
+    val syncState by viewModel.syncState.collectAsStateWithLifecycle()
     val yandexConnected by viewModel.yandexConnected.collectAsStateWithLifecycle()
     if (state.profile == null || state.settings == null) {
         Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
@@ -230,6 +231,7 @@ fun MountainFormApp(
                     onRestoreBackup = viewModel::previewBackup,
                     yandexConnected = yandexConnected,
                     yandexLoginConfigured = yandexLoginConfigured,
+                    syncState = syncState,
                     onConnectYandex = onRequestYandexLogin,
                     onDisconnectYandex = viewModel::disconnectYandex,
                     onSyncYandex = viewModel::syncYandex,
