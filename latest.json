@@ -1,7 +1,7 @@
 {
-  "versionCode": 15,
-  "versionName": "0.3.12",
-  "apkUrl": "https://github.com/yakovenkoalg-collab/hiking-trainer/releases/download/v0.3.12/mountain-form-0.3.12.apk",
-  "sha256": "64943442426a387870faad94ba9c0cfe79dd99ea51bebf427ca3b10d84790e81",
-  "notes": "Безопасное обновление согласованного плана без дублей и изменений прошлого, усиленная домашняя тренировка в четверг, понятная проверка плана и улучшенный отчёт с предстоящими тренировками."
+  "versionCode": 16,
+  "versionName": "0.3.13",
+  "apkUrl": "https://github.com/yakovenkoalg-collab/hiking-trainer/releases/download/v0.3.13/mountain-form-0.3.13.apk",
+  "sha256": "d63adc0f982e45b3d944bf94828fd498141da41ef00ac31ef729c4052f2b898d",
+  "notes": "Прогресс загрузки APK и обмена с Яндекс Диском, исправленное применение плана без ложного конфликта плеча и удаление устаревшей тренировки 4 сентября."
 }
