@@ -232,6 +232,41 @@ class MountainFormRepository(
         )
     }
 
+    suspend fun reopenCompletedSession(
+        id: String,
+        mode: ReopenCompletedMode,
+        nowEpochMillis: Long = System.currentTimeMillis(),
+    ) {
+        val session = dao.getSession(id) ?: error("Тренировка не найдена")
+        require(canReopenCompletedSession(session, nowEpochMillis)) {
+            "Исправить завершение можно в течение 48 часов"
+        }
+        val resumeFrom = if (mode == ReopenCompletedMode.CONTINUE) {
+            dao.getCompletedSetLogs(id).firstOrNull()
+        } else {
+            null
+        }
+        val affectedCheckpointIds = dao.getReviewCheckpoints()
+            .filter { checkpoint ->
+                checkpoint.status != ReviewStatus.RESOLVED && runCatching {
+                    id in json.decodeFromString<List<String>>(checkpoint.completedSessionIdsJson)
+                }.getOrDefault(false)
+            }
+            .map { it.id }
+        dao.reopenCompletedSession(
+            session = session.copy(
+                status = SessionStatus.PLANNED,
+                completedAtEpochMillis = null,
+                actualRpe = null,
+                actualDurationSeconds = 0,
+                completionNotes = "",
+            ),
+            mode = mode,
+            resumeFrom = resumeFrom,
+            checkpointIds = affectedCheckpointIds,
+        )
+    }
+
     fun decodeSteps(session: TrainingSessionEntity): List<ExerciseStep> =
         runCatching { json.decodeFromString<List<ExerciseStep>>(session.stepsJson) }.getOrDefault(emptyList())
 

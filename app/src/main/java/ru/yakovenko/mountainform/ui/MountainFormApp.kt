@@ -319,6 +319,10 @@ fun MountainFormApp(
                         viewModel.restoreSkippedSession(sessionId)
                         navController.popBackStack()
                     },
+                    onReopenCompleted = { sessionId, mode ->
+                        viewModel.reopenCompletedSession(sessionId, mode)
+                        navController.popBackStack()
+                    },
                     importedActivities = state.importedActivities,
                     onReplaceSessionActivities = viewModel::replaceSessionActivities,
                 )

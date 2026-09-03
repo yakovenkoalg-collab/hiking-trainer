@@ -149,6 +149,12 @@ interface MountainFormDao {
     @Upsert
     suspend fun upsertStepLogs(logs: List<SessionStepLogEntity>)
 
+    @Query("DELETE FROM session_step_logs WHERE sessionId = :sessionId")
+    suspend fun deleteStepLogs(sessionId: String)
+
+    @Query("DELETE FROM session_step_logs WHERE sessionId = :sessionId AND stepId = :stepId")
+    suspend fun deleteStepLog(sessionId: String, stepId: String)
+
     @Query("SELECT * FROM posture_assessments ORDER BY epochDay DESC, createdAtEpochMillis DESC")
     fun observePostureAssessments(): Flow<List<PostureAssessmentEntity>>
 
@@ -176,6 +182,18 @@ interface MountainFormDao {
     @Upsert
     suspend fun upsertSetLogs(logs: List<SessionSetLogEntity>)
 
+    @Query("SELECT * FROM session_set_logs WHERE sessionId = :sessionId AND completed = 1 ORDER BY completedAtEpochMillis DESC")
+    suspend fun getCompletedSetLogs(sessionId: String): List<SessionSetLogEntity>
+
+    @Query("DELETE FROM session_set_logs WHERE sessionId = :sessionId")
+    suspend fun deleteSetLogs(sessionId: String)
+
+    @Query(
+        "DELETE FROM session_set_logs WHERE sessionId = :sessionId AND stepId = :stepId " +
+            "AND roundIndex = :roundIndex AND setIndex = :setIndex",
+    )
+    suspend fun deleteSetLog(sessionId: String, stepId: String, roundIndex: Int, setIndex: Int)
+
     @Query("SELECT * FROM review_checkpoints ORDER BY createdAtEpochMillis DESC")
     fun observeReviewCheckpoints(): Flow<List<ReviewCheckpointEntity>>
 
@@ -187,6 +205,31 @@ interface MountainFormDao {
 
     @Upsert
     suspend fun upsertReviewCheckpoints(checkpoints: List<ReviewCheckpointEntity>)
+
+    @Query("DELETE FROM review_checkpoints WHERE id IN (:ids) AND status != 'RESOLVED'")
+    suspend fun deleteOpenReviewCheckpoints(ids: List<String>)
+
+    @Transaction
+    suspend fun reopenCompletedSession(
+        session: TrainingSessionEntity,
+        mode: ReopenCompletedMode,
+        resumeFrom: SessionSetLogEntity?,
+        checkpointIds: List<String>,
+    ) {
+        when (mode) {
+            ReopenCompletedMode.START_OVER -> {
+                deleteStepLogs(session.id)
+                deleteSetLogs(session.id)
+            }
+
+            ReopenCompletedMode.CONTINUE -> resumeFrom?.let { last ->
+                deleteStepLog(last.sessionId, last.stepId)
+                deleteSetLog(last.sessionId, last.stepId, last.roundIndex, last.setIndex)
+            }
+        }
+        if (checkpointIds.isNotEmpty()) deleteOpenReviewCheckpoints(checkpointIds)
+        upsertSession(session)
+    }
 
     @Query("SELECT * FROM imported_activities ORDER BY startAtEpochMillis DESC")
     fun observeImportedActivities(): Flow<List<ImportedActivityEntity>>

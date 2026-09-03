@@ -2,6 +2,7 @@ package ru.yakovenko.mountainform.ui.screens
 
 import androidx.annotation.DrawableRes
 import androidx.compose.foundation.Image
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -35,6 +36,7 @@ import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.RadioButton
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Slider
@@ -69,6 +71,7 @@ import ru.yakovenko.mountainform.data.ExerciseCatalogEntity
 import ru.yakovenko.mountainform.data.ExerciseStep
 import ru.yakovenko.mountainform.data.ActivityLinkStatus
 import ru.yakovenko.mountainform.data.ImportedActivityEntity
+import ru.yakovenko.mountainform.data.ReopenCompletedMode
 import ru.yakovenko.mountainform.data.SessionStatus
 import ru.yakovenko.mountainform.data.SessionSetLogEntity
 import ru.yakovenko.mountainform.data.SessionStepLogEntity
@@ -76,6 +79,7 @@ import ru.yakovenko.mountainform.data.SetTimingStatus
 import ru.yakovenko.mountainform.data.TrainingSessionEntity
 import ru.yakovenko.mountainform.data.ShoulderLoadPhase
 import ru.yakovenko.mountainform.data.catalogId
+import ru.yakovenko.mountainform.data.canReopenCompletedSession
 import ru.yakovenko.mountainform.data.imageKey
 import ru.yakovenko.mountainform.ui.components.SafetyBanner
 import ru.yakovenko.mountainform.ui.formatEpochDay
@@ -115,6 +119,7 @@ fun SessionScreen(
     onComplete: (String, Int, String, Int) -> Unit,
     onSkip: (String, String) -> Unit,
     onRestoreSkipped: (String) -> Unit = {},
+    onReopenCompleted: (String, ReopenCompletedMode) -> Unit = { _, _ -> },
     importedActivities: List<ImportedActivityEntity> = emptyList(),
     onReplaceSessionActivities: (String, List<String>) -> Unit = { _, _ -> },
 ) {
@@ -152,6 +157,8 @@ fun SessionScreen(
     var showSkipStage by remember { mutableStateOf(false) }
     var showPainStop by remember { mutableStateOf(false) }
     var showRestoreSkipped by remember { mutableStateOf(false) }
+    var showReopenCompleted by remember { mutableStateOf(false) }
+    var reopenCompletedMode by remember(session.id) { mutableStateOf(ReopenCompletedMode.START_OVER) }
     var showSetResult by remember { mutableStateOf(false) }
     var editResultOnly by remember { mutableStateOf(false) }
     var showResetTimerConfirm by remember { mutableStateOf(false) }
@@ -162,7 +169,7 @@ fun SessionScreen(
     var garminSelection by remember(session.id) { mutableStateOf(emptySet<String>()) }
     var showExerciseMenu by remember(session.id) { mutableStateOf(false) }
     var showOverview by remember(session.id) {
-        mutableStateOf(session.status == SessionStatus.PLANNED && initialExecutionState?.workoutStarted != true)
+        mutableStateOf(session.status != SessionStatus.PLANNED || initialExecutionState?.workoutStarted != true)
     }
     var pendingRestLog by remember(session.id) { mutableStateOf<SessionSetLogEntity?>(null) }
     val targetIndex = executionState.targetIndex
@@ -914,6 +921,11 @@ fun SessionScreen(
                                     onClick = { showRestoreSkipped = true },
                                     modifier = Modifier.fillMaxWidth(),
                                 ) { Text("Вернуть тренировку в план") }
+                            } else if (canReopenCompletedSession(session)) {
+                                OutlinedButton(
+                                    onClick = { showReopenCompleted = true },
+                                    modifier = Modifier.fillMaxWidth().testTag("reopen_completed_session_button"),
+                                ) { Text("Исправить завершение") }
                             }
                         }
                     }
@@ -1090,6 +1102,41 @@ fun SessionScreen(
             dismissButton = { TextButton(onClick = { showRestoreSkipped = false }) { Text("Отмена") } },
         )
     }
+    if (showReopenCompleted) {
+        AlertDialog(
+            onDismissRequest = { showReopenCompleted = false },
+            title = { Text("Вернуть тренировку к выполнению?") },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                    Text("Выберите, что сделать с уже записанными этапами. Привязки Garmin сохранятся.")
+                    ReopenCompletedChoice(
+                        selected = reopenCompletedMode == ReopenCompletedMode.CONTINUE,
+                        title = "Продолжить с последнего этапа",
+                        description = "Предыдущие записи сохранятся, последний этап потребуется повторить.",
+                        onClick = { reopenCompletedMode = ReopenCompletedMode.CONTINUE },
+                    )
+                    ReopenCompletedChoice(
+                        selected = reopenCompletedMode == ReopenCompletedMode.START_OVER,
+                        title = "Начать заново",
+                        description = "Этапы, время и итоговый RPE этой тренировки будут очищены.",
+                        onClick = { reopenCompletedMode = ReopenCompletedMode.START_OVER },
+                    )
+                }
+            },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        showReopenCompleted = false
+                        onReopenCompleted(session.id, reopenCompletedMode)
+                    },
+                    modifier = Modifier.testTag("confirm_reopen_completed_button"),
+                ) { Text("Вернуть к выполнению") }
+            },
+            dismissButton = {
+                TextButton(onClick = { showReopenCompleted = false }) { Text("Отмена") }
+            },
+        )
+    }
     if (showSafetyDetails) {
         AlertDialog(
             onDismissRequest = { showSafetyDetails = false },
@@ -1114,6 +1161,26 @@ fun SessionScreen(
                 }
             },
         )
+    }
+}
+
+@Composable
+private fun ReopenCompletedChoice(
+    selected: Boolean,
+    title: String,
+    description: String,
+    onClick: () -> Unit,
+) {
+    Row(
+        modifier = Modifier.fillMaxWidth().clickable(onClick = onClick).padding(vertical = 4.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+    ) {
+        RadioButton(selected = selected, onClick = null)
+        Column(Modifier.weight(1f)) {
+            Text(title, fontWeight = FontWeight.SemiBold)
+            Text(description, style = MaterialTheme.typography.bodySmall)
+        }
     }
 }
 

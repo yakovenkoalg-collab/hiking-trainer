@@ -22,6 +22,7 @@ import ru.yakovenko.mountainform.data.MountainFormRepository
 import ru.yakovenko.mountainform.data.PracticeLogEntity
 import ru.yakovenko.mountainform.data.PostureAssessmentEntity
 import ru.yakovenko.mountainform.data.ReadinessCheckEntity
+import ru.yakovenko.mountainform.data.ReopenCompletedMode
 import ru.yakovenko.mountainform.data.RescheduleEventEntity
 import ru.yakovenko.mountainform.data.SessionStepLogEntity
 import ru.yakovenko.mountainform.data.SessionSetLogEntity
@@ -572,6 +573,21 @@ class AppViewModel(
             runCatching { repository.restoreSkippedSession(id) }
                 .onSuccess { message.value = "Тренировка возвращена в план" }
                 .onFailure { message.value = it.message ?: "Не удалось вернуть тренировку" }
+        }
+    }
+
+    fun reopenCompletedSession(id: String, mode: ReopenCompletedMode) {
+        viewModelScope.launch {
+            runCatching { repository.reopenCompletedSession(id, mode) }
+                .onSuccess {
+                    workoutExecutionStore.clear(id)
+                    message.value = when (mode) {
+                        ReopenCompletedMode.CONTINUE -> "Тренировка возвращена к последнему этапу"
+                        ReopenCompletedMode.START_OVER -> "Тренировка возвращена — начните заново"
+                    }
+                    automaticSyncIfEnabled()
+                }
+                .onFailure { message.value = it.message ?: "Не удалось исправить завершение" }
         }
     }
 

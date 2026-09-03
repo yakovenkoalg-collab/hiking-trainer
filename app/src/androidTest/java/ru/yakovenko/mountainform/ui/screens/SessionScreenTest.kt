@@ -17,6 +17,8 @@ import androidx.compose.ui.test.performScrollToNode
 import org.junit.Rule
 import org.junit.Test
 import ru.yakovenko.mountainform.data.ExerciseStep
+import ru.yakovenko.mountainform.data.ReopenCompletedMode
+import ru.yakovenko.mountainform.data.SessionStatus
 import ru.yakovenko.mountainform.data.SessionSetLogEntity
 import ru.yakovenko.mountainform.data.SetTimingStatus
 import ru.yakovenko.mountainform.data.TrainingSessionEntity
@@ -454,6 +456,53 @@ class SessionScreenTest {
         composeRule.onNodeWithText("Вернуть тренировку в план").performScrollTo().performClick()
         composeRule.onNodeWithText("Вернуть").performClick()
         composeRule.runOnIdle { check(restored == session.id) }
+    }
+
+    @Test
+    fun recentCompletedWorkoutCanBeRestartedWithAnExplicitChoice() {
+        val session = testSession("accidental-completion", "Ошибочно завершённая").copy(
+            status = SessionStatus.COMPLETED,
+            completedAtEpochMillis = System.currentTimeMillis(),
+            actualRpe = 2,
+            actualDurationSeconds = 4_200,
+        )
+        var reopened: Pair<String, ReopenCompletedMode>? = null
+        composeRule.setContent {
+            MountainFormTheme {
+                SessionScreen(
+                    padding = PaddingValues(),
+                    session = session,
+                    steps = listOf(ExerciseStep("walk", "Ходьба", "10 минут", "Спокойно", workSeconds = 600)),
+                    catalog = emptyList(),
+                    stepLogs = emptyList(),
+                    setLogs = emptyList(),
+                    shoulderRestrictionActive = false,
+                    loadBlocked = false,
+                    adaptationRequired = false,
+                    readinessRecommendation = "",
+                    readinessReasons = emptyList(),
+                    initialExecutionState = null,
+                    onExecutionStateChanged = {},
+                    onStepCompleted = { _, _, _ -> },
+                    onSaveSetLog = {},
+                    onBack = {},
+                    onEditReadiness = {},
+                    onComplete = { _, _, _, _ -> },
+                    onSkip = { _, _ -> },
+                    onReopenCompleted = { id, mode -> reopened = id to mode },
+                )
+            }
+        }
+
+        composeRule.onNodeWithTag("reopen_completed_session_button").performScrollTo().performClick()
+        composeRule.onNodeWithText("Вернуть тренировку к выполнению?").assertIsDisplayed()
+        composeRule.onNodeWithText("Начать заново").assertIsDisplayed()
+        composeRule.onNodeWithText("Продолжить с последнего этапа").assertIsDisplayed()
+        composeRule.onNodeWithTag("confirm_reopen_completed_button").performClick()
+
+        composeRule.runOnIdle {
+            check(reopened == (session.id to ReopenCompletedMode.START_OVER))
+        }
     }
 
     private fun testSession(id: String, title: String) = TrainingSessionEntity(

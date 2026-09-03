@@ -472,6 +472,22 @@ object SessionStatus {
     const val SKIPPED = "SKIPPED"
 }
 
+enum class ReopenCompletedMode {
+    CONTINUE,
+    START_OVER,
+}
+
+const val COMPLETED_REOPEN_WINDOW_MILLIS = 48L * 60L * 60L * 1_000L
+
+fun canReopenCompletedSession(
+    session: TrainingSessionEntity,
+    nowEpochMillis: Long = System.currentTimeMillis(),
+): Boolean {
+    val completedAt = session.completedAtEpochMillis ?: return false
+    val elapsed = nowEpochMillis - completedAt
+    return session.status == SessionStatus.COMPLETED && elapsed in 0..COMPLETED_REOPEN_WINDOW_MILLIS
+}
+
 object ShoulderLoadPhase {
     const val RESTRICTED = "RESTRICTED"
     const val THERAPIST_CLEARED = "THERAPIST_CLEARED"
