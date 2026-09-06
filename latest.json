@@ -1,7 +1,7 @@
 {
-  "versionCode": 17,
-  "versionName": "0.3.14",
-  "apkUrl": "https://github.com/yakovenkoalg-collab/hiking-trainer/releases/download/v0.3.14/mountain-form-0.3.14.apk",
-  "sha256": "08f44f08140b71473e07956e6c3fba459bf277bbedc6666ee5c9d12027e60f90",
-  "notes": "Недавно завершённую по ошибке тренировку можно вернуть к выполнению: продолжить с последнего этапа либо начать заново, сохранив Garmin-привязки."
+  "versionCode": 18,
+  "versionName": "0.3.15",
+  "apkUrl": "https://github.com/yakovenkoalg-collab/hiking-trainer/releases/download/v0.3.15/mountain-form-0.3.15.apk",
+  "sha256": "b1424c84ab2b9ed7cb07c72f5bb79c739aa9789a58a94b264be84f8271ea9ee0",
+  "notes": "Добавлен домашний план с гирей на 8–13 сентября, отдых стал отдельным состоянием тренировки, а продолжение завершённой по ошибке тренировки сохраняет накопленное время."
 }
