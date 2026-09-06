@@ -22,7 +22,9 @@ import ru.yakovenko.mountainform.data.SessionStatus
 import ru.yakovenko.mountainform.data.SessionSetLogEntity
 import ru.yakovenko.mountainform.data.SetTimingStatus
 import ru.yakovenko.mountainform.data.TrainingSessionEntity
+import ru.yakovenko.mountainform.data.WorkoutBlockType
 import ru.yakovenko.mountainform.domain.WorkoutExecutionState
+import ru.yakovenko.mountainform.domain.WorkoutTimerMode
 import ru.yakovenko.mountainform.ui.theme.MountainFormTheme
 import java.time.LocalDate
 
@@ -382,6 +384,81 @@ class SessionScreenTest {
             check(savedLog?.elapsedSeconds == 0)
             check(savedLog?.actualReps == 8)
         }
+    }
+
+    @Test
+    fun restIsShownAsItsOwnStateWithTheNextExerciseOnlyAsAPreview() {
+        val session = testSession("rest-state", "Нативный отдых")
+        var savedState: WorkoutExecutionState? = null
+        val now = System.currentTimeMillis()
+        val steps = listOf(
+            ExerciseStep(
+                id = "first",
+                title = "Первое упражнение",
+                prescription = "1 × 8",
+                instructions = "Спокойно",
+                blockId = "circuit",
+                blockTitle = "Круг",
+                blockType = WorkoutBlockType.CIRCUIT,
+                reps = 8,
+                restSeconds = 60,
+            ),
+            ExerciseStep(
+                id = "second",
+                title = "Второе упражнение",
+                prescription = "1 × 10",
+                instructions = "Спокойно",
+                blockId = "circuit",
+                blockTitle = "Круг",
+                blockType = WorkoutBlockType.CIRCUIT,
+                reps = 10,
+            ),
+        )
+
+        composeRule.setContent {
+            MountainFormTheme {
+                SessionScreen(
+                    padding = PaddingValues(),
+                    session = session,
+                    steps = steps,
+                    catalog = emptyList(),
+                    stepLogs = emptyList(),
+                    setLogs = emptyList(),
+                    shoulderRestrictionActive = false,
+                    loadBlocked = false,
+                    adaptationRequired = false,
+                    readinessRecommendation = "",
+                    readinessReasons = emptyList(),
+                    initialExecutionState = WorkoutExecutionState(
+                        sessionId = session.id,
+                        workoutStarted = true,
+                        targetIndex = 1,
+                        workoutTickStartedAtEpochMillis = now,
+                        timerMode = WorkoutTimerMode.REST,
+                        timerTickStartedAtEpochMillis = now,
+                        restRemainingSeconds = 60,
+                        restPlannedSeconds = 60,
+                        restSourceTargetIndex = 0,
+                    ),
+                    onExecutionStateChanged = { savedState = it },
+                    onStepCompleted = { _, _, _ -> },
+                    onSaveSetLog = {},
+                    onBack = {},
+                    onEditReadiness = {},
+                    onComplete = { _, _, _, _ -> },
+                    onSkip = { _, _ -> },
+                )
+            }
+        }
+
+        composeRule.onNodeWithTag("rest_timer_state").assertIsDisplayed()
+        composeRule.onNodeWithText("Переход к следующему упражнению").assertIsDisplayed()
+        composeRule.onNodeWithText("Выполнено: Первое упражнение").assertIsDisplayed()
+        composeRule.onNodeWithTag("next_exercise_preview").assertIsDisplayed()
+        check(composeRule.onAllNodesWithText("Техника").fetchSemanticsNodes().isEmpty())
+        composeRule.onNodeWithText("+15 секунд").performClick()
+        composeRule.runOnIdle { check((savedState?.restPlannedSeconds ?: 0) >= 75) }
+        composeRule.onNodeWithTag("finish_rest_button").assertIsDisplayed()
     }
 
     @Test

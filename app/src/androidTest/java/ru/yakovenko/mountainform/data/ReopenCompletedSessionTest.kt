@@ -93,7 +93,9 @@ class ReopenCompletedSessionTest {
 
         repository.reopenCompletedSession(session.id, ReopenCompletedMode.CONTINUE, now)
 
-        assertEquals(SessionStatus.PLANNED, dao.getSession(session.id)?.status)
+        val reopened = requireNotNull(dao.getSession(session.id))
+        assertEquals(SessionStatus.PLANNED, reopened.status)
+        assertEquals(3_600, reopened.actualDurationSeconds)
         assertEquals(listOf("first"), dao.getStepLogs().filter { it.sessionId == session.id }.map { it.stepId })
         assertEquals(listOf("first"), dao.getSetLogs().filter { it.sessionId == session.id }.map { it.stepId })
     }

@@ -4,6 +4,7 @@ import kotlinx.coroutines.flow.Flow
 import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
 import ru.yakovenko.mountainform.domain.AgreedHybridPlan
+import ru.yakovenko.mountainform.domain.HomeKettlebellWeekPlan
 import ru.yakovenko.mountainform.domain.ProgressedHybridPlan
 import ru.yakovenko.mountainform.domain.ShoulderSafety
 import ru.yakovenko.mountainform.domain.durationLooksImplausible
@@ -258,7 +259,11 @@ class MountainFormRepository(
                 status = SessionStatus.PLANNED,
                 completedAtEpochMillis = null,
                 actualRpe = null,
-                actualDurationSeconds = 0,
+                actualDurationSeconds = if (mode == ReopenCompletedMode.CONTINUE) {
+                    session.actualDurationSeconds
+                } else {
+                    0
+                },
                 completionNotes = "",
             ),
             mode = mode,
@@ -780,6 +785,25 @@ class MountainFormRepository(
         val includeClearedUpperBody = !profile.shoulderRestrictionActive ||
             ShoulderLoadPhase.ordered.indexOf(profile.shoulderLoadPhase) >=
             ShoulderLoadPhase.ordered.indexOf(ShoulderLoadPhase.THERAPIST_CLEARED)
+        if (
+            HomeKettlebellWeekPlan.isRelevant(
+                today = today,
+                existingPlannedSessions = existing
+                    .filter { it.status == SessionStatus.PLANNED }
+                    .associate { it.id to it.plannedEpochDay },
+                completedEpochDays = completedEpochDays,
+            )
+        ) {
+            return previewPlan(
+                json.encodeToString(
+                    HomeKettlebellWeekPlan.envelope(
+                        today = today,
+                        completedEpochDays = completedEpochDays,
+                    ),
+                ),
+                today,
+            )
+        }
         if (
             ProgressedHybridPlan.isRelevant(
                 today = today,

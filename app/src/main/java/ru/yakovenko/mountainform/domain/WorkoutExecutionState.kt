@@ -96,4 +96,4 @@ data class WorkoutExecutionState(
 
 fun durationLooksImplausible(actualSeconds: Int, plannedMinutes: Int): Boolean =
     actualSeconds > max(3 * 60 * 60, plannedMinutes * 3 * 60) ||
-        (plannedMinutes >= 15 && actualSeconds in 0 until 5 * 60)
+        (plannedMinutes >= 15 && actualSeconds in 0..5 * 60)

@@ -101,6 +101,7 @@ class WorkoutExecutionStateTest {
         assertEquals(true, durationLooksImplausible(4 * 60 * 60, 65))
         assertEquals(true, durationLooksImplausible(27, 55))
         assertEquals(true, durationLooksImplausible(0, 55))
+        assertEquals(true, durationLooksImplausible(5 * 60, 70))
         assertEquals(false, durationLooksImplausible(3_600, 65))
         assertEquals(false, durationLooksImplausible(3 * 60 * 60, 90))
     }
