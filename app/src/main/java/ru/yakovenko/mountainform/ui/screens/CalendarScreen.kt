@@ -146,10 +146,10 @@ fun CalendarScreen(
                         Text("План до ${formatEpochDay(lastPlannedDay)}", fontWeight = FontWeight.Bold)
                         Text(trainingCount(futurePlanned, "предстоящая", "предстоящие", "предстоящих"), style = MaterialTheme.typography.bodySmall)
                         Button(onClick = onProposeNextBlock, modifier = Modifier.fillMaxWidth()) {
-                            Text("Проверить план")
+                            Text("Согласованный план")
                         }
                         Text(
-                            "Сначала увидите список изменений. Прошлые и выполненные дни не меняются.",
+                            "Предложение из этой версии приложения. Новые файлы с Диска — в разделе «Обмен данными». Сначала просмотр, затем применение.",
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                         )

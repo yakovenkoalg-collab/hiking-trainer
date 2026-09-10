@@ -25,6 +25,17 @@ object WorkoutPlanCompiler {
                 WorkoutBlockType.CIRCUIT, WorkoutBlockType.SUPERSET -> compileRounds(normalized)
                 else -> compileStraight(normalized)
             }
+        }.let { targets ->
+            targets.mapIndexed { index, target ->
+                when {
+                    index == targets.lastIndex -> target.copy(restAfterSeconds = 0)
+                    target.blockType != WorkoutBlockType.CIRCUIT &&
+                        target.blockType != WorkoutBlockType.SUPERSET &&
+                        target.blockType != WorkoutBlockType.AEROBIC &&
+                        target.restAfterSeconds == 0 -> target.copy(restAfterSeconds = target.step.restSeconds)
+                    else -> target
+                }
+            }
         }
 
     fun normalizeLegacyStep(step: ExerciseStep): ExerciseStep {

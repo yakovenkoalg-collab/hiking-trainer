@@ -5,6 +5,7 @@ import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
 import ru.yakovenko.mountainform.domain.AgreedHybridPlan
 import ru.yakovenko.mountainform.domain.HomeKettlebellWeekPlan
+import ru.yakovenko.mountainform.domain.HomeRunningBlock
 import ru.yakovenko.mountainform.domain.ProgressedHybridPlan
 import ru.yakovenko.mountainform.domain.ShoulderSafety
 import ru.yakovenko.mountainform.domain.durationLooksImplausible
@@ -411,6 +412,10 @@ class MountainFormRepository(
             else -> "RECORDED"
         },
         notes = session.completionNotes,
+        completedAtEpochMillis = session.completedAtEpochMillis,
+        planVersion = session.planVersion,
+        durationMinutes = session.durationMinutes,
+        steps = json.decodeFromString<List<ExerciseStep>>(session.stepsJson),
     )
 
     suspend fun exportBackup(): String {
@@ -528,14 +533,21 @@ class MountainFormRepository(
         val existingSessions = dao.getSessions()
         val existing = existingSessions.associateBy { it.id }
         val todayEpochDay = today.toEpochDay()
+        val movedSessions = existingSessions.filter {
+            it.status == SessionStatus.PLANNED && it.rescheduleReason.isNotBlank()
+        }
+        val movedIds = movedSessions.mapTo(mutableSetOf()) { it.id }
+        val movedDays = movedSessions.flatMap { listOf(it.plannedEpochDay, it.originalEpochDay) }.toSet()
         val completedEpochDays = existingSessions
             .filter { it.status == SessionStatus.COMPLETED }
             .mapTo(mutableSetOf()) { it.plannedEpochDay }
         val protectedSessionCount = decodedPlan.sessions.count {
-            it.plannedEpochDay < todayEpochDay || it.plannedEpochDay in completedEpochDays
+            it.plannedEpochDay < todayEpochDay || it.plannedEpochDay in completedEpochDays ||
+                it.plannedEpochDay in movedDays || it.id in movedIds
         }
         val futureSessions = decodedPlan.sessions.filter {
-            it.plannedEpochDay >= todayEpochDay && it.plannedEpochDay !in completedEpochDays
+            it.plannedEpochDay >= todayEpochDay && it.plannedEpochDay !in completedEpochDays &&
+                it.plannedEpochDay !in movedDays && it.id !in movedIds
         }
         val replacementThrough = decodedPlan.replacePlannedThroughEpochDay
         val replacementFrom = decodedPlan.replacePlannedFromEpochDay?.coerceAtLeast(todayEpochDay)
@@ -556,7 +568,7 @@ class MountainFormRepository(
             existing.values.filter {
                 it.status == SessionStatus.PLANNED &&
                     it.plannedEpochDay in plan.replacePlannedFromEpochDay..plan.replacePlannedThroughEpochDay &&
-                    it.id !in incomingIds
+                    it.id !in incomingIds && it.id !in movedIds
             }.sortedBy { it.plannedEpochDay }
         } else {
             emptyList()
@@ -568,6 +580,13 @@ class MountainFormRepository(
                     ShoulderSafety.conflicts(step, profile.shoulderLoadPhase)
                 if (shoulderConflict) "${session.title}: ${step.title} конфликтует с ограничением плеча" else null
             }
+        }.toMutableList()
+        val changedExistingIds = plan.sessions.filter { planned ->
+            existing[planned.id]?.let { it.status == SessionStatus.PLANNED && !matchesPlannedSession(it, planned) } == true
+        }.map { it.id }.toSet() + removedPlanned.map { it.id }
+        val loggedIds = (dao.getSetLogs().map { it.sessionId } + dao.getStepLogs().map { it.sessionId }).toSet()
+        if (changedExistingIds.any { it in loggedIds }) {
+            conflicts += "У изменяемой тренировки уже есть записи подходов. Завершите или разберите её перед заменой плана."
         }
         val changes = plan.sessions.mapNotNull { planned ->
             val old = existing[planned.id]
@@ -630,11 +649,23 @@ class MountainFormRepository(
         step.workSeconds?.let { append(" · ${it / 60}:${(it % 60).toString().padStart(2, '0')}") }
     }
 
-    suspend fun applyPlan(preview: ImportPreview) {
+    suspend fun applyPlan(preview: ImportPreview, today: LocalDate = LocalDate.now()) {
         require(preview.conflicts.isEmpty()) { "План содержит конфликты с активными ограничениями" }
+        val freshPreview = previewPlan(json.encodeToString(preview.plan), today)
+        require(freshPreview.conflicts.isEmpty() && freshPreview.changes == preview.changes &&
+            freshPreview.removedSessionIds == preview.removedSessionIds) {
+            "План, записи или ограничения изменились. Откройте предпросмотр заново."
+        }
+        require(dao.getRevisions().none { it.applied && it.id == preview.plan.planId }) {
+            "Эта версия плана уже применена. Переносы и выполненные тренировки сохранены."
+        }
+        val currentProfile = requireNotNull(dao.getProfile())
+        require(!currentProfile.shoulderRestrictionActive || preview.plan.sessions.all { session ->
+            session.steps.none { ShoulderSafety.conflicts(it, currentProfile.shoulderLoadPhase) }
+        }) { "Ограничения изменились. Откройте предпросмотр плана заново." }
         val existingSessions = dao.getSessions()
         val existing = existingSessions.associateBy { it.id }
-        val todayEpochDay = LocalDate.now().toEpochDay()
+        val todayEpochDay = today.toEpochDay()
         val completedEpochDays = existingSessions
             .filter { it.status == SessionStatus.COMPLETED }
             .mapTo(mutableSetOf()) { it.plannedEpochDay }
@@ -644,6 +675,7 @@ class MountainFormRepository(
         val sessionsToApply = safePlanSessions.mapNotNull { planned ->
             val old = existing[planned.id]
             if (old != null && old.status != SessionStatus.PLANNED) return@mapNotNull null
+            if (old != null && matchesPlannedSession(old, planned)) return@mapNotNull null
             TrainingSessionEntity(
                 id = planned.id,
                 plannedEpochDay = planned.plannedEpochDay,
@@ -778,6 +810,7 @@ class MountainFormRepository(
 
     suspend fun proposeNextBaseBlock(today: LocalDate = LocalDate.now()): ImportPreview {
         val existing = dao.getSessions()
+        val revisions = dao.getRevisions().filter { it.applied }
         val profile = requireNotNull(dao.getProfile())
         val completedEpochDays = existing
             .filter { it.status == SessionStatus.COMPLETED }
@@ -785,24 +818,31 @@ class MountainFormRepository(
         val includeClearedUpperBody = !profile.shoulderRestrictionActive ||
             ShoulderLoadPhase.ordered.indexOf(profile.shoulderLoadPhase) >=
             ShoulderLoadPhase.ordered.indexOf(ShoulderLoadPhase.THERAPIST_CLEARED)
-        if (
-            HomeKettlebellWeekPlan.isRelevant(
-                today = today,
-                existingPlannedSessions = existing
-                    .filter { it.status == SessionStatus.PLANNED }
-                    .associate { it.id to it.plannedEpochDay },
-                completedEpochDays = completedEpochDays,
-            )
-        ) {
-            return previewPlan(
-                json.encodeToString(
-                    HomeKettlebellWeekPlan.envelope(
-                        today = today,
-                        completedEpochDays = completedEpochDays,
-                    ),
-                ),
-                today,
-            )
+        // Select the authoritative generation first. An installed or expired
+        // generation must never fall through to a superseded template.
+        if (!today.isBefore(HomeRunningBlock.availableFrom)) {
+            val alreadyApplied = revisions.any { it.id == HomeRunningBlock.PLAN_ID }
+            val newerImportedPlan = revisions.any {
+                it.id != HomeRunningBlock.PLAN_ID && !it.id.startsWith("home-kettlebell-week-v1-") &&
+                    !it.id.startsWith("progressed-hybrid-v2-") && !it.id.startsWith("agreed-hybrid-") &&
+                    it.importedAtEpochMillis >= HomeRunningBlock.availableFrom
+                        .atStartOfDay(java.time.ZoneId.systemDefault()).toInstant().toEpochMilli()
+            }
+            check(!today.isAfter(HomeRunningBlock.through) && !alreadyApplied && !newerImportedPlan) {
+                "Новых согласованных изменений нет. Установленный план и ваши переносы сохранены. " +
+                    "Для следующей недели обсудите отчёт и загрузите новую версию через Обмен данными."
+            }
+            return previewPlan(json.encodeToString(HomeRunningBlock.envelope(today)), today)
+        }
+        if (!today.isBefore(LocalDate.of(2026, 9, 6))) {
+            check(revisions.none { it.id.startsWith("home-kettlebell-week-v1") } &&
+                HomeKettlebellWeekPlan.isRelevant(today,
+                    existing.filter { it.status == SessionStatus.PLANNED }.associate { it.id to it.plannedEpochDay },
+                    completedEpochDays)) {
+                "Новых согласованных изменений нет. Домашний план и ваши переносы сохранены."
+            }
+            return previewPlan(json.encodeToString(HomeKettlebellWeekPlan.envelope(today = today,
+                completedEpochDays = completedEpochDays)), today)
         }
         if (
             ProgressedHybridPlan.isRelevant(

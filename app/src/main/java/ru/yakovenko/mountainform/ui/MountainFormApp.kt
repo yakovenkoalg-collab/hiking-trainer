@@ -11,10 +11,7 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.material3.Card
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.NavigationBar
@@ -55,7 +52,6 @@ import ru.yakovenko.mountainform.ui.screens.ProgressScreen
 import ru.yakovenko.mountainform.ui.screens.RemindersScreen
 import ru.yakovenko.mountainform.ui.screens.SessionScreen
 import ru.yakovenko.mountainform.ui.screens.TodayScreen
-import ru.yakovenko.mountainform.data.PlanSessionSummary
 
 private data class TopDestination(val route: String, val label: String, val icon: ImageVector)
 
@@ -331,72 +327,8 @@ fun MountainFormApp(
     }
 
     importPreview?.let { preview ->
-        AlertDialog(
-            onDismissRequest = viewModel::dismissImport,
-            title = { Text("Предпросмотр нового плана") },
-            text = {
-                LazyColumn(verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                    item {
-                        Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                            Text("Автор: ${preview.plan.author}", fontWeight = FontWeight.SemiBold)
-                            Text(preview.plan.reason)
-                            Text("Добавится: ${preview.added} · изменится: ${preview.updated} · заменится: ${preview.removed}")
-                            if (preview.preservedHistory > 0) {
-                                Text("История сохранена без изменений: ${preview.preservedHistory}")
-                            }
-                        }
-                    }
-                    if (preview.conflicts.isNotEmpty()) {
-                        item { Text("Конфликты — план нельзя применить", fontWeight = FontWeight.Bold) }
-                        items(preview.conflicts.size) { index -> Text("• ${preview.conflicts[index]}") }
-                    }
-                    if (preview.changes.isEmpty()) {
-                        if (preview.removedSessions.isEmpty()) {
-                            item { Text("Применимых изменений нет: существующая история останется без изменений.") }
-                        }
-                    }
-                    items(preview.changes.size) { index ->
-                        val change = preview.changes[index]
-                        Card {
-                            Column(
-                                Modifier.fillMaxWidth().padding(12.dp),
-                                verticalArrangement = Arrangement.spacedBy(8.dp),
-                            ) {
-                                Text(
-                                    if (change.before == null) "Добавится тренировка" else "Изменится тренировка",
-                                    fontWeight = FontWeight.Bold,
-                                )
-                                change.before?.let {
-                                    Text("Было", fontWeight = FontWeight.SemiBold)
-                                    PlanSummary(it)
-                                }
-                                Text(if (change.before == null) "План" else "Станет", fontWeight = FontWeight.SemiBold)
-                                PlanSummary(change.after)
-                            }
-                        }
-                    }
-                    items(preview.removedSessions.size) { index ->
-                        Card {
-                            Column(
-                                Modifier.fillMaxWidth().padding(12.dp),
-                                verticalArrangement = Arrangement.spacedBy(8.dp),
-                            ) {
-                                Text("Заменится в будущем плане", fontWeight = FontWeight.Bold)
-                                Text("Было", fontWeight = FontWeight.SemiBold)
-                                PlanSummary(preview.removedSessions[index])
-                                Text("Выполненная история не затрагивается.")
-                            }
-                        }
-                    }
-                }
-            },
-            confirmButton = {
-                TextButton(
-                    enabled = preview.conflicts.isEmpty() && (preview.changes.isNotEmpty() || preview.removedSessions.isNotEmpty()),
-                    onClick = viewModel::applyImport,
-                ) { Text("Применить") }
-            },
-            dismissButton = { TextButton(onClick = viewModel::dismissImport) { Text("Отмена") } },
+        ru.yakovenko.mountainform.ui.screens.PlanReviewDialog(
+            preview = preview, onDismiss = viewModel::dismissImport, onApply = viewModel::applyImport,
         )
     }
 
@@ -430,14 +362,5 @@ fun MountainFormApp(
             },
             confirmButton = { TextButton(onClick = { showPrivacyPolicy = false }) { Text("Понятно") } },
         )
-    }
-}
-
-@Composable
-private fun PlanSummary(summary: PlanSessionSummary) {
-    Column(verticalArrangement = Arrangement.spacedBy(3.dp)) {
-        Text("${formatEpochDay(summary.plannedEpochDay)} · ${summary.title}")
-        Text("${summary.durationMinutes} мин · RPE ${summary.targetRpe}")
-        summary.exercises.forEach { Text("• $it", style = androidx.compose.material3.MaterialTheme.typography.bodySmall) }
     }
 }

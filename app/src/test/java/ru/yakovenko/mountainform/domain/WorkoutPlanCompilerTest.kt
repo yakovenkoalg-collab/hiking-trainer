@@ -7,6 +7,15 @@ import ru.yakovenko.mountainform.data.WorkoutBlockType
 
 class WorkoutPlanCompilerTest {
     @Test
+    fun restIsPreservedBetweenStrengthExercisesButNotAfterWorkout() {
+        val targets = WorkoutPlanCompiler.compile(listOf(
+            ExerciseStep("first", "Первое", "2 × 8", "", sets = 2, reps = 8, restSeconds = 90),
+            ExerciseStep("second", "Второе", "2 × 10", "", sets = 2, reps = 10, restSeconds = 60),
+        ))
+        assertEquals(listOf(90, 90, 60, 0), targets.map { it.restAfterSeconds })
+    }
+
+    @Test
     fun legacyPrescriptionBecomesIndividualSets() {
         val targets = WorkoutPlanCompiler.compile(
             listOf(ExerciseStep("squat", "Присед", "3 × 8", "", restSeconds = 75)),

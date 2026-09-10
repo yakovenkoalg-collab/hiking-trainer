@@ -900,11 +900,8 @@ fun SessionScreen(
                         Card {
                             Column(Modifier.fillMaxWidth().padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                                 details?.setup?.takeIf { it.isNotBlank() }?.let { Instruction("Подготовка", it) }
-                                Instruction("Выполнение", details?.execution ?: current.instructions)
+                                Instruction("Выполнение", current.instructions.ifBlank { details?.execution.orEmpty() })
                                 details?.breathing?.takeIf { it.isNotBlank() }?.let { Instruction("Дыхание", it) }
-                                if (details == null && current.instructions.isNotBlank()) {
-                                    Text(current.instructions)
-                                }
                                 if (current.restSeconds > 0) Text("Отдых: ${current.restSeconds} сек", fontWeight = FontWeight.SemiBold)
                             }
                         }

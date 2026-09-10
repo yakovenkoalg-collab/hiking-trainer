@@ -335,6 +335,17 @@ interface MountainFormDao {
         revision: PlanRevisionEntity,
         resolvedCheckpoint: ReviewCheckpointEntity?,
     ) {
+        require(getRevisions().none { it.id == revision.id && it.applied }) {
+            "Эта версия плана уже применена"
+        }
+        val current = getSessions().associateBy { it.id }
+        val completedDays = current.values.filter { it.status == SessionStatus.COMPLETED }.map { it.plannedEpochDay }.toSet()
+        require(sessions.none { it.plannedEpochDay in completedDays }) {
+            "На эту дату уже выполнена тренировка. Откройте предпросмотр заново."
+        }
+        require(sessions.none { incoming -> current[incoming.id]?.status?.let { it != SessionStatus.PLANNED } == true }) {
+            "История изменилась: откройте предпросмотр заново"
+        }
         if (removedPlannedSessionIds.isNotEmpty()) {
             deleteStepLogsForPlannedSessions(removedPlannedSessionIds)
             deleteSetLogsForPlannedSessions(removedPlannedSessionIds)

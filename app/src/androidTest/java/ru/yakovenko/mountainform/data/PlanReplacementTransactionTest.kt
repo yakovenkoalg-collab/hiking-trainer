@@ -69,7 +69,7 @@ class PlanReplacementTransactionTest {
         )
 
         dao.applyPlanChanges(
-            sessions = listOf(session("new-plan", SessionStatus.PLANNED)),
+            sessions = listOf(session("new-plan", SessionStatus.PLANNED).copy(plannedEpochDay = 2)),
             removedPlannedSessionIds = listOf(planned.id, completed.id),
             revision = PlanRevisionEntity("revision", 4, 1, "test", "replace", "{}", true),
             resolvedCheckpoint = null,
@@ -224,11 +224,99 @@ class PlanReplacementTransactionTest {
         assertEquals(oldFutureIds.toSet(), preview.removedSessionIds.toSet())
         assertTrue(preview.plan.sessions.all { it.id.startsWith("home-week-") })
 
-        repository.applyPlan(preview)
+        repository.applyPlan(preview, today)
 
         assertEquals(SessionStatus.COMPLETED, dao.getSession(completed.id)?.status)
         assertTrue(oldFutureIds.all { dao.getSession(it) == null })
         assertTrue(preview.plan.sessions.all { dao.getSession(it.id) != null })
+    }
+
+    @Test
+    fun appliedHomePlanNeverFallsBackToGymAndPreservesAMove() = runBlocking {
+        val today = LocalDate.of(2026, 9, 10)
+        dao.upsertProfile(profile().copy(shoulderRestrictionActive = false))
+        val repository = MountainFormRepository(dao)
+        val preview = repository.proposeNextBaseBlock(today)
+        assertEquals("home-running-2026-09-10-v1", preview.plan.planId)
+        repository.applyPlan(preview, today)
+        val target = dao.getSessions().first()
+        dao.upsertSession(target.copy(plannedEpochDay = target.plannedEpochDay + 1, rescheduleReason = "Перенос"))
+        val before = dao.getSessions()
+        assertTrue(runCatching { repository.proposeNextBaseBlock(today.plusDays(1)) }.isFailure)
+        assertTrue(runCatching { repository.applyPlan(preview, today) }.isFailure)
+        assertEquals(before, dao.getSessions())
+        assertEquals(1, dao.getRevisions().size)
+    }
+
+    @Test
+    fun oldHomeWeekAlreadyPresentDoesNotFallThroughToGym() = runBlocking {
+        val today = LocalDate.of(2026, 9, 8)
+        dao.upsertProfile(profile().copy(shoulderRestrictionActive = false))
+        val repository = MountainFormRepository(dao)
+        repository.applyPlan(repository.proposeNextBaseBlock(today), today)
+        assertTrue(runCatching { repository.proposeNextBaseBlock(today.plusDays(1)) }.isFailure)
+    }
+
+    @Test
+    fun newHomeBlockPreservesCompletedAndSkippedSessions() = runBlocking {
+        val today = LocalDate.of(2026, 9, 10)
+        dao.upsertProfile(profile().copy(shoulderRestrictionActive = false))
+        val completed = session("completed", SessionStatus.COMPLETED).copy(plannedEpochDay = today.toEpochDay())
+        val skipped = session("skipped", SessionStatus.SKIPPED).copy(plannedEpochDay = today.minusDays(1).toEpochDay())
+        dao.upsertSessions(listOf(completed, skipped))
+        val repository = MountainFormRepository(dao)
+        val preview = repository.proposeNextBaseBlock(today)
+        assertTrue(preview.plan.sessions.none { it.plannedEpochDay == today.toEpochDay() })
+        repository.applyPlan(preview, today)
+        assertEquals(completed, dao.getSession(completed.id))
+        assertEquals(skipped, dao.getSession(skipped.id))
+    }
+
+    @Test
+    fun changingShoulderRestrictionAfterPreviewBlocksApply() = runBlocking {
+        val today = LocalDate.of(2026, 9, 10)
+        dao.upsertProfile(profile().copy(shoulderRestrictionActive = false))
+        val repository = MountainFormRepository(dao)
+        val preview = repository.proposeNextBaseBlock(today)
+        dao.upsertProfile(profile())
+        assertTrue(runCatching { repository.applyPlan(preview, today) }.isFailure)
+        assertTrue(dao.getSessions().isEmpty())
+    }
+
+    @Test
+    fun newerExternalPlanIsNotOverwrittenByBundledTemplate() = runBlocking {
+        val today = LocalDate.of(2026, 9, 10)
+        dao.upsertProfile(profile().copy(shoulderRestrictionActive = false))
+        dao.upsertRevision(PlanRevisionEntity("home-custom-v2", System.currentTimeMillis(), 1, "test", "test", "{}", true))
+        assertTrue(runCatching { MountainFormRepository(dao).proposeNextBaseBlock(today) }.isFailure)
+    }
+
+    @Test
+    fun newRevisionKeepsManuallyMovedWorkoutWithoutCreatingItsDuplicate() = runBlocking {
+        val today = LocalDate.of(2026, 9, 10)
+        dao.upsertProfile(profile().copy(shoulderRestrictionActive = false))
+        val moved = session("moved", SessionStatus.PLANNED).copy(
+            originalEpochDay = LocalDate.of(2026, 9, 11).toEpochDay(),
+            plannedEpochDay = LocalDate.of(2026, 9, 12).toEpochDay(), rescheduleReason = "Личное расписание")
+        dao.upsertSession(moved)
+        val repository = MountainFormRepository(dao)
+        val preview = repository.proposeNextBaseBlock(today)
+        assertTrue(preview.plan.sessions.none { it.plannedEpochDay == moved.originalEpochDay })
+        repository.applyPlan(preview, today)
+        assertEquals(moved, dao.getSession(moved.id))
+    }
+
+    @Test
+    fun loggedWorkoutCannotBeReplacedByNewPlan() = runBlocking {
+        val today = LocalDate.of(2026, 9, 10)
+        dao.upsertProfile(profile().copy(shoulderRestrictionActive = false))
+        dao.upsertSession(session("started", SessionStatus.PLANNED).copy(plannedEpochDay = today.toEpochDay()))
+        dao.upsertSetLog(SessionSetLogEntity("started", "step", 1, 1, completed = true))
+        val repository = MountainFormRepository(dao)
+        val preview = repository.proposeNextBaseBlock(today)
+        assertTrue(preview.conflicts.isNotEmpty())
+        assertTrue(runCatching { repository.applyPlan(preview, today) }.isFailure)
+        assertEquals(1, dao.getSetLogs().size)
     }
 
     @Test
@@ -292,10 +380,11 @@ class PlanReplacementTransactionTest {
 
         val report = Json.decodeFromString<ReportEnvelope>(MountainFormRepository(dao).exportReport(today))
 
-        assertEquals(5, report.schemaVersion)
+        assertEquals(6, report.schemaVersion)
         assertEquals("SUSPECT", report.sessions.single().durationStatus)
         assertEquals("short-duration", report.sessions.single().id)
         assertEquals("upcoming", report.upcomingSessions.single().id)
+        assertEquals(30, report.upcomingSessions.single().durationMinutes)
     }
 
     @Test

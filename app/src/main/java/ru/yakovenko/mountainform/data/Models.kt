@@ -316,7 +316,7 @@ data class PlanSession(
 
 @Serializable
 data class ReportEnvelope(
-    val schemaVersion: Int = 5,
+    val schemaVersion: Int = 6,
     val generatedAtEpochMillis: Long,
     val periodStartEpochDay: Long,
     val periodEndEpochDay: Long,
@@ -361,6 +361,10 @@ data class ReportSession(
     val actualDurationSeconds: Int,
     val durationStatus: String,
     val notes: String,
+    val completedAtEpochMillis: Long? = null,
+    val planVersion: Int = 1,
+    val durationMinutes: Int = 0,
+    val steps: List<ExerciseStep> = emptyList(),
 )
 
 @Serializable

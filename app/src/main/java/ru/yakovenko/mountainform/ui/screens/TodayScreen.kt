@@ -176,7 +176,7 @@ fun TodayScreen(
                     Column(Modifier.fillMaxWidth().padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                         Text("Следующих тренировок пока нет", fontWeight = FontWeight.Bold)
                         OutlinedButton(onClick = onOpenCalendar, modifier = Modifier.fillMaxWidth()) {
-                            Text("Открыть календарь и обновить план")
+                            Text("Открыть календарь")
                         }
                     }
                 }
@@ -256,7 +256,7 @@ fun TodayScreen(
                     ),
                 ) {
                     Column(Modifier.fillMaxWidth().padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                        Text("План нужно обновить", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+                        Text("Обсудим результаты", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
                         Text(checkpoint.reason, style = MaterialTheme.typography.bodyMedium, maxLines = 2)
                         OutlinedButton(onClick = onShareReviewReport, modifier = Modifier.fillMaxWidth()) {
                             Text("Сформировать отчёт")
