@@ -1,7 +1,7 @@
 {
-  "versionCode": 18,
-  "versionName": "0.3.15",
-  "apkUrl": "https://github.com/yakovenkoalg-collab/hiking-trainer/releases/download/v0.3.15/mountain-form-0.3.15.apk",
-  "sha256": "b1424c84ab2b9ed7cb07c72f5bb79c739aa9789a58a94b264be84f8271ea9ee0",
-  "notes": "Добавлен домашний план с гирей на 8–13 сентября, отдых стал отдельным состоянием тренировки, а продолжение завершённой по ошибке тренировки сохраняет накопленное время."
+  "versionCode": 19,
+  "versionName": "0.3.16",
+  "apkUrl": "https://github.com/yakovenkoalg-collab/hiking-trainer/releases/download/v0.3.16/mountain-form-0.3.16.apk",
+  "sha256": "e9a0722b11a804713d9d4f99d772dcb082513d000667e7adc2a358f2b8c5fa7f",
+  "notes": "Дом и бег: план на 10–20 сентября. Исправлены возврат старого плана и отдых между упражнениями; защищены история и переносы. Компактный предпросмотр и подробный отчёт. После обновления: Календарь → Согласованный план → просмотр и Применить."
 }
