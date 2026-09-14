@@ -3,6 +3,15 @@ package ru.yakovenko.mountainform.ui.screens
 import androidx.annotation.DrawableRes
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.foundation.gestures.rememberTransformableState
+import androidx.compose.foundation.gestures.transformable
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.draw.clipToBounds
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.window.Dialog
+import androidx.compose.ui.window.DialogProperties
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -89,6 +98,9 @@ import ru.yakovenko.mountainform.domain.WorkoutSetTarget
 import ru.yakovenko.mountainform.domain.WorkoutTimerMode
 import ru.yakovenko.mountainform.domain.ShoulderSafety
 import ru.yakovenko.mountainform.domain.durationLooksImplausible
+import ru.yakovenko.mountainform.domain.SessionCompletionDetails
+import ru.yakovenko.mountainform.domain.doseLabel
+import java.time.LocalDate
 import java.time.Instant
 import java.time.ZoneId
 import java.time.format.DateTimeFormatter
@@ -122,6 +134,7 @@ fun SessionScreen(
     onReopenCompleted: (String, ReopenCompletedMode) -> Unit = { _, _ -> },
     importedActivities: List<ImportedActivityEntity> = emptyList(),
     onReplaceSessionActivities: (String, List<String>) -> Unit = { _, _ -> },
+    onCompleteDetailed: (String, Int, String, Int, SessionCompletionDetails) -> Unit = { id, rpe, notes, seconds, _ -> onComplete(id, rpe, notes, seconds) },
 ) {
     if (session == null) {
         Column(Modifier.fillMaxSize().padding(padding).padding(20.dp)) {
@@ -158,6 +171,7 @@ fun SessionScreen(
     }
     var clockEpochMillis by remember { mutableLongStateOf(System.currentTimeMillis()) }
     var showCompletion by remember { mutableStateOf(false) }
+    var showRetrospective by remember { mutableStateOf(false) }
     var showSkip by remember { mutableStateOf(false) }
     var showSkipStage by remember { mutableStateOf(false) }
     var showPainStop by remember { mutableStateOf(false) }
@@ -316,7 +330,7 @@ fun SessionScreen(
             rir = rir,
             pain = pain,
             painNote = painNote,
-            startedAtEpochMillis = now - loggedElapsed * 1_000L,
+            startedAtEpochMillis = (now - loggedElapsed * 1_000L).takeIf { timingStatus == SetTimingStatus.RECORDED },
             completedAtEpochMillis = now,
             elapsedSeconds = loggedElapsed,
             timingStatus = timingStatus,
@@ -371,7 +385,7 @@ fun SessionScreen(
             .maxByOrNull { it.completedAtEpochMillis ?: 0L }
         saveTargetResult(
             resultTarget = current,
-            reps = current.plannedReps ?: previousForExercise?.actualReps,
+            reps = if (current.workSeconds != null) null else current.plannedReps ?: previousForExercise?.actualReps,
             load = previousForExercise?.loadKg,
             rpe = null,
             rir = null,
@@ -554,6 +568,7 @@ fun SessionScreen(
         bottomBar = {
             if (session.status == SessionStatus.PLANNED && showOverview) {
                 Surface(tonalElevation = 3.dp) {
+                    Column {
                     Button(
                         onClick = {
                             if (allTargetsCompleted) showCompletion = true else startOrResumeWorkout()
@@ -566,9 +581,15 @@ fun SessionScreen(
                             when {
                                 allTargetsCompleted -> "  Перейти к итогу"
                                 executionState.workoutStarted -> "  Продолжить"
-                                else -> "  Начать тренировку"
+                                else -> "  Тренируюсь сейчас"
                             },
                         )
+                    }
+                    if (!allTargetsCompleted) TextButton(
+                        onClick = { pauseWorkoutForSafety(); showRetrospective = true },
+                        enabled = !emptyPlan,
+                        modifier = Modifier.fillMaxWidth().testTag("record_completed_workout"),
+                    ) { Text("Уже выполнил") }
                     }
                 }
             } else if (session.status == SessionStatus.PLANNED && target != null) {
@@ -634,7 +655,7 @@ fun SessionScreen(
         ) {
             item {
                 Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                    Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(3.dp)) {
                         Text(formatEpochDay(session.plannedEpochDay), color = MaterialTheme.colorScheme.primary)
                         Text(
                             if (executionState.workoutStarted) {
@@ -649,7 +670,7 @@ fun SessionScreen(
                         modifier = Modifier.fillMaxWidth(),
                     )
                     Text(
-                        if (executionState.workoutStarted) "$completedCount из ${targets.size} этапов" else "${steps.size} упражнений · ${targets.size} этапов",
+                        if (executionState.workoutStarted) "$completedCount из ${targets.size} этапов" else "Упражнений: ${steps.size} · этапов: ${targets.size}",
                         style = MaterialTheme.typography.labelMedium,
                     )
                 }
@@ -716,26 +737,24 @@ fun SessionScreen(
                             verticalArrangement = Arrangement.spacedBy(9.dp),
                         ) {
                             Text("План тренировки", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
-                            Text(session.objective, maxLines = 2, overflow = TextOverflow.Ellipsis)
+                            if (showPlanDetails) Text(session.objective)
                             targets.groupBy { it.blockId }.values.forEach { blockTargets ->
                                 val first = blockTargets.first()
                                 val uniqueExercises = blockTargets.distinctBy { it.step.id }
-                                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                                Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(2.dp)) {
                                     Text(
                                         first.blockTitle,
                                         color = MaterialTheme.colorScheme.primary,
                                         fontWeight = FontWeight.SemiBold,
                                     )
-                                    Text("${uniqueExercises.size} упр. · ${blockTargets.size} этапов", style = MaterialTheme.typography.bodySmall)
+                                    Text("Упражнений: ${uniqueExercises.size}", style = MaterialTheme.typography.bodySmall)
                                 }
                                 if (showPlanDetails) {
                                     uniqueExercises.forEach { blockTarget ->
-                                        val count = blockTargets.count { it.step.id == blockTarget.step.id }
-                                        Text(
-                                            "• ${blockTarget.step.title} — ${blockTarget.step.prescription}" +
-                                                if (count > 1) " · $count этапа" else "",
-                                            style = MaterialTheme.typography.bodySmall,
-                                        )
+                                        Column(Modifier.fillMaxWidth().padding(vertical = 4.dp)) {
+                                            Text(blockTarget.step.title, style = MaterialTheme.typography.bodyMedium)
+                                            Text(blockTarget.step.prescription, style = MaterialTheme.typography.bodySmall)
+                                        }
                                     }
                                 }
                             }
@@ -777,26 +796,21 @@ fun SessionScreen(
                 } else {
                     item {
                         Text(
-                            currentTarget.blockTitle,
-                            style = MaterialTheme.typography.labelLarge,
-                            color = MaterialTheme.colorScheme.primary,
-                        )
-                        Text(
                             when {
                                 currentTarget.totalRounds > 1 -> "Круг ${currentTarget.roundIndex} из ${currentTarget.totalRounds} · ${blockTypeLabel(currentTarget.blockType)}"
-                                currentTarget.totalSets > 1 -> "Подход ${currentTarget.setIndex} из ${currentTarget.totalSets} · ${blockTypeLabel(currentTarget.blockType)}"
+                                currentTarget.totalSets > 1 -> "Подход ${currentTarget.setIndex} из ${currentTarget.totalSets}"
                                 else -> "Этап ${targetIndex + 1} из ${targets.size} · ${blockTypeLabel(currentTarget.blockType)}"
                             },
                             style = MaterialTheme.typography.labelMedium,
                             modifier = Modifier.padding(top = 3.dp),
                         )
-                        Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-                            Text(current.title, style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold, modifier = Modifier.weight(1f))
+                        Column(Modifier.fillMaxWidth()) {
+                            Text(current.title, style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold)
+                            Text(currentTarget.doseLabel(), style = MaterialTheme.typography.titleMedium, color = MaterialTheme.colorScheme.primary)
                             TextButton(onClick = { showTechnique = !showTechnique }) {
                                 Text(if (showTechnique) "Скрыть" else "Техника")
                             }
                         }
-                        Text(current.prescription, style = MaterialTheme.typography.titleMedium, color = MaterialTheme.colorScheme.primary)
                     }
                 }
                 if (session.status == SessionStatus.PLANNED && executionState.timerMode != WorkoutTimerMode.REST) {
@@ -823,7 +837,11 @@ fun SessionScreen(
                                     Text(
                                         buildString {
                                             append("Записано")
-                                            currentLog.actualReps?.let { append(" · $it повт.") }
+                                            if (currentTarget.workSeconds == null) {
+                                                currentLog.actualReps?.let { append(" · $it повт.") }
+                                            } else if (currentLog.timingStatus == SetTimingStatus.RECORDED) {
+                                                append(" · ${currentLog.elapsedSeconds} сек")
+                                            }
                                             currentLog.loadKg?.let { append(" · $it кг") }
                                             currentLog.actualRpe?.let { append(" · RPE $it") }
                                         },
@@ -850,7 +868,7 @@ fun SessionScreen(
                                             showSetResult = true
                                         },
                                         enabled = !trainingBlocked && !paused,
-                                        modifier = Modifier.testTag("detailed_set_result_button"),
+                                        modifier = Modifier.weight(1f).testTag("detailed_set_result_button"),
                                     ) {
                                         Text(if (currentLog == null) "Записать подробнее" else "Изменить запись")
                                     }
@@ -899,7 +917,12 @@ fun SessionScreen(
                     item {
                         Card {
                             Column(Modifier.fillMaxWidth().padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                                details?.setup?.takeIf { it.isNotBlank() }?.let { Instruction("Подготовка", it) }
+                                val setup = when (current.imageKey()) {
+                                    "single-leg-bridge" -> "Лягте на спину. Одна стопа на полу, вторую ногу удерживайте согнутой над полом; таз ровный."
+                                    "single-leg-calf-raise" -> "Встаньте на одну ногу у устойчивой опоры, вторую держите над полом. Рука лишь помогает сохранять равновесие."
+                                    else -> details?.setup
+                                }
+                                setup?.takeIf { it.isNotBlank() }?.let { Instruction("Подготовка", it) }
                                 Instruction("Выполнение", current.instructions.ifBlank { details?.execution.orEmpty() })
                                 details?.breathing?.takeIf { it.isNotBlank() }?.let { Instruction("Дыхание", it) }
                                 if (current.restSeconds > 0) Text("Отдых: ${current.restSeconds} сек", fontWeight = FontWeight.SemiBold)
@@ -933,6 +956,8 @@ fun SessionScreen(
                                 fontWeight = FontWeight.Bold,
                             )
                             session.actualRpe?.let { Text("Фактический RPE: $it") }
+                            session.performedEpochDay?.let { Text("Выполнено: ${formatEpochDay(it)}") }
+                            if (session.recordingMode == "RETROSPECTIVE") Text("Записано после занятия · без таймеров подходов", style = MaterialTheme.typography.bodySmall)
                             if (session.actualDurationSeconds > 0) {
                                 Text("Фактическое время: ${formatDuration(session.actualDurationSeconds)}")
                             }
@@ -967,9 +992,14 @@ fun SessionScreen(
             actualDurationSeconds = workoutSeconds,
             plannedDurationMinutes = session.durationMinutes,
             onDismiss = { showCompletion = false },
-            onConfirm = { rpe, notes, durationSeconds -> onComplete(session.id, rpe, notes, durationSeconds) },
+            onConfirm = { rpe, notes, durationSeconds, day -> onCompleteDetailed(session.id, rpe, notes, durationSeconds, SessionCompletionDetails(performedEpochDay = day)) },
         )
     }
+    if (showRetrospective) RetrospectiveSessionDialog(
+        session.id, targets, sessionSetLogs,
+        onDismiss = { showRetrospective = false },
+        onConfirm = { rpe, notes, seconds, metadata -> onCompleteDetailed(session.id, rpe, notes, seconds, metadata) },
+    )
     if (showStaleTimerWarning) {
         AlertDialog(
             onDismissRequest = { showStaleTimerWarning = false },
@@ -1457,7 +1487,7 @@ private fun SetResultDialog(
                         OutlinedTextField(
                             reps,
                             { reps = it.filter(Char::isDigit).take(3) },
-                            label = { Text("Повторения") },
+                            label = { Text(if (target.step.prescription.contains("на ногу", true) || target.step.prescription.contains("на сторону", true)) "Повторения на каждую сторону" else "Повторения") },
                             isError = repsInvalid,
                             supportingText = { if (repsInvalid) Text("Допустимо 0–999") },
                             keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
@@ -1551,16 +1581,18 @@ private fun blockTypeLabel(type: String): String = when (type) {
 }
 
 @Composable
-private fun ExerciseIllustration(key: String) {
+internal fun ExerciseIllustration(key: String) {
     val resource = illustrationResource(key)
+    var expanded by remember(key) { mutableStateOf(false) }
     Card {
         if (resource != null) {
             Image(
                 painter = painterResource(resource),
                 contentDescription = "Последовательность выполнения упражнения",
-                modifier = Modifier.fillMaxWidth().height(220.dp),
+                modifier = Modifier.fillMaxWidth().height(220.dp).clickable { expanded = true }.testTag("exercise_illustration"),
                 contentScale = ContentScale.Fit,
             )
+            TextButton(onClick = { expanded = true }, modifier = Modifier.fillMaxWidth()) { Text("Увеличить схему") }
         } else {
             Box(Modifier.fillMaxWidth().height(180.dp), contentAlignment = Alignment.Center) {
                 Column(horizontalAlignment = Alignment.CenterHorizontally) {
@@ -1570,10 +1602,38 @@ private fun ExerciseIllustration(key: String) {
             }
         }
     }
+    if (expanded && resource != null) Dialog(onDismissRequest = { expanded = false }, properties = DialogProperties(usePlatformDefaultWidth = false)) {
+        var scale by remember { mutableFloatStateOf(1f) }
+        var offset by remember { mutableStateOf(Offset.Zero) }
+        val transform = rememberTransformableState { zoom, pan, _ ->
+            scale = (scale * zoom).coerceIn(1f, 4f)
+            offset = if (scale == 1f) Offset.Zero else offset + pan
+        }
+        Surface(Modifier.fillMaxSize()) {
+            Column {
+                TextButton(onClick = { expanded = false }, modifier = Modifier.fillMaxWidth()) { Text("Закрыть схему") }
+                Box(Modifier.weight(1f).fillMaxWidth().clipToBounds().transformable(transform), contentAlignment = Alignment.Center) {
+                    Image(painterResource(resource), "Схема упражнения крупно",
+                        modifier = Modifier.fillMaxWidth().graphicsLayer { scaleX = scale; scaleY = scale; translationX = offset.x; translationY = offset.y },
+                        contentScale = ContentScale.Fit)
+                }
+                TextButton(onClick = { scale = if (scale == 1f) 2f else 1f; offset = Offset.Zero }, modifier = Modifier.fillMaxWidth()) {
+                    Text(if (scale == 1f) "Увеличить ×2" else "Сбросить масштаб")
+                }
+            }
+        }
+    }
 }
 
 @DrawableRes
-private fun illustrationResource(key: String): Int? = when (key) {
+internal fun illustrationResource(key: String): Int? = when (key) {
+    "split-squat" -> R.drawable.exercise_split_squat
+    "pull-up" -> R.drawable.exercise_pull_up
+    "forearm-plank" -> R.drawable.exercise_forearm_plank
+    "single-leg-bridge" -> R.drawable.exercise_single_leg_bridge
+    "single-leg-calf-raise" -> R.drawable.exercise_single_leg_calf_raise
+    "stride" -> R.drawable.exercise_strides
+    "stride-recovery" -> R.drawable.exercise_run_walk
     "breathing" -> R.drawable.exercise_breathing
     "heel-slide" -> R.drawable.exercise_heel_slide
     "thoracic-mobility", "mobility" -> R.drawable.exercise_thoracic_mobility
@@ -1610,24 +1670,23 @@ private fun CompletionDialog(
     actualDurationSeconds: Int,
     plannedDurationMinutes: Int,
     onDismiss: () -> Unit,
-    onConfirm: (Int, String, Int) -> Unit,
+    onConfirm: (Int, String, Int, Long) -> Unit,
 ) {
     var rpe by remember { mutableFloatStateOf(initialRpe.toFloat()) }
     var notes by remember { mutableStateOf("") }
     val suspiciousInitialDuration = durationLooksImplausible(actualDurationSeconds, plannedDurationMinutes)
-    val initialDurationMinutes = if (suspiciousInitialDuration) {
-        plannedDurationMinutes
-    } else {
-        ((actualDurationSeconds + 30) / 60).coerceAtLeast(1)
-    }
-    var durationMinutes by remember { mutableStateOf(initialDurationMinutes.toString()) }
+    var date by remember { mutableStateOf(LocalDate.now().format(recordingDateFormat)) }
+    val day = parseRecordingDay(date)
+    var durationMinutes by remember { mutableStateOf(if (suspiciousInitialDuration || actualDurationSeconds == 0) "" else ((actualDurationSeconds + 30) / 60).toString()) }
     val parsedDurationMinutes = durationMinutes.toIntOrNull()
     val durationInvalid = parsedDurationMinutes == null || parsedDurationMinutes !in 1..720
     AlertDialog(
         onDismissRequest = onDismiss,
         title = { Text("Итог тренировки") },
         text = {
-            Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+            Column(Modifier.verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                RecordingDateField(date) { date = it }
+                Text("Если отмечали подходы с задержкой, укажите время всей тренировки вручную.", style = MaterialTheme.typography.bodySmall)
                 if (suspiciousInitialDuration) {
                     SafetyBanner(
                         "Таймер показал ${formatDuration(actualDurationSeconds)}, что не похоже на фактическую длительность. Проверьте время перед сохранением.",
@@ -1655,8 +1714,8 @@ private fun CompletionDialog(
         },
         confirmButton = {
             Button(
-                enabled = !durationInvalid,
-                onClick = { onConfirm(rpe.toInt(), notes, requireNotNull(parsedDurationMinutes) * 60) },
+                enabled = !durationInvalid && day != null,
+                onClick = { onConfirm(rpe.toInt(), notes, requireNotNull(parsedDurationMinutes) * 60, requireNotNull(day)) },
             ) { Text("Завершить") }
         },
         dismissButton = { TextButton(onClick = onDismiss) { Text("Отмена") } },

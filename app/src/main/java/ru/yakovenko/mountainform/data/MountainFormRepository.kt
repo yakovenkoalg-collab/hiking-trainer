@@ -9,6 +9,7 @@ import ru.yakovenko.mountainform.domain.HomeRunningBlock
 import ru.yakovenko.mountainform.domain.ProgressedHybridPlan
 import ru.yakovenko.mountainform.domain.ShoulderSafety
 import ru.yakovenko.mountainform.domain.durationLooksImplausible
+import ru.yakovenko.mountainform.domain.SessionCompletionDetails
 import java.time.DayOfWeek
 import java.time.LocalDate
 import java.time.temporal.TemporalAdjusters
@@ -193,17 +194,24 @@ class MountainFormRepository(
         dao.deletePractice("$epochDay-core-posture")
     }
 
-    suspend fun completeSession(id: String, rpe: Int, notes: String, actualDurationSeconds: Int) {
-        val session = dao.getSessions().firstOrNull { it.id == id } ?: return
+    suspend fun completeSession(id: String, rpe: Int, notes: String, actualDurationSeconds: Int, details: SessionCompletionDetails = SessionCompletionDetails()) {
+        val session = requireNotNull(dao.getSession(id)) { "Тренировка не найдена" }
         require(session.status == SessionStatus.PLANNED) { "Завершить можно только запланированную тренировку" }
-        dao.upsertSession(
+        require(details.performedEpochDay <= LocalDate.now().toEpochDay()) { "Дата выполнения не может быть в будущем" }
+        require(actualDurationSeconds in 60..43_200 && rpe in 1..10)
+        require(details.recordingMode in setOf("LIVE", "RETROSPECTIVE"))
+        require(details.retrospectiveLogs.all { it.sessionId == id && it.elapsedSeconds == 0 && it.actualRestSeconds == null })
+        dao.completeWithLogs(
             session.copy(
                 status = SessionStatus.COMPLETED,
                 completedAtEpochMillis = System.currentTimeMillis(),
                 actualRpe = rpe,
                 actualDurationSeconds = actualDurationSeconds.coerceAtLeast(0),
                 completionNotes = notes.trim(),
+                performedEpochDay = details.performedEpochDay,
+                recordingMode = details.recordingMode,
             ),
+            details.retrospectiveLogs,
         )
         maybeCreateReviewCheckpoint()
     }
@@ -266,6 +274,8 @@ class MountainFormRepository(
                     0
                 },
                 completionNotes = "",
+                performedEpochDay = null,
+                recordingMode = "UNKNOWN",
             ),
             mode = mode,
             resumeFrom = resumeFrom,
@@ -359,6 +369,7 @@ class MountainFormRepository(
                 ReportActivity(
                     id = it.id,
                     sourceType = it.sourceType,
+                    heartRateSource = it.heartRateSource,
                     title = it.title,
                     activityType = it.activityType,
                     startAtEpochMillis = it.startAtEpochMillis,
@@ -408,11 +419,14 @@ class MountainFormRepository(
         actualDurationSeconds = session.actualDurationSeconds,
         durationStatus = when {
             session.status != SessionStatus.COMPLETED -> "NOT_APPLICABLE"
+            session.recordingMode == "RETROSPECTIVE" -> "USER_ENTERED"
             durationLooksImplausible(session.actualDurationSeconds, session.durationMinutes) -> "SUSPECT"
             else -> "RECORDED"
         },
         notes = session.completionNotes,
         completedAtEpochMillis = session.completedAtEpochMillis,
+        performedEpochDay = session.performedEpochDay,
+        recordingMode = session.recordingMode,
         planVersion = session.planVersion,
         durationMinutes = session.durationMinutes,
         steps = json.decodeFromString<List<ExerciseStep>>(session.stepsJson),
@@ -451,7 +465,7 @@ class MountainFormRepository(
 
     suspend fun previewBackup(rawJson: String): BackupPreview {
         val backup = json.decodeFromString<BackupEnvelope>(rawJson)
-        require(backup.schemaVersion in 1..3) { "Неподдерживаемая версия резервной копии" }
+        require(backup.schemaVersion in 1..4) { "Неподдерживаемая версия резервной копии" }
         val existing = dao.getSessions().associateBy { it.id }
         return BackupPreview(
             backup = backup,
@@ -775,6 +789,12 @@ class MountainFormRepository(
 
     suspend fun linkActivity(activityId: String, sessionId: String?) {
         dao.linkImportedActivity(activityId, sessionId)
+    }
+
+    suspend fun setHeartRateSource(activityId: String, source: String) {
+        require(source in setOf("UNKNOWN", "CHEST_USER", "WRIST_USER"))
+        val activity = dao.getImportedActivities().firstOrNull { it.id == activityId } ?: return
+        dao.upsertImportedActivity(activity.copy(heartRateSource = source))
     }
 
     suspend fun replaceSessionActivities(sessionId: String, selectedActivityIds: List<String>) {

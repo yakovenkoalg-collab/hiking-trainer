@@ -214,6 +214,7 @@ fun MountainFormApp(
                     onLinkActivity = viewModel::linkActivity,
                     onIgnoreActivity = viewModel::ignoreActivity,
                     onRestoreActivity = viewModel::restoreActivity,
+                    onHeartRateSource = viewModel::setHeartRateSource,
                 )
             }
             composable("sync-settings") {
@@ -301,10 +302,11 @@ fun MountainFormApp(
                         }
                     },
                     onTimerFinished = workoutSignal::play,
+                    onCompleteDetailed = { sessionId, rpe, notes, seconds, details ->
+                        viewModel.completeSession(sessionId, rpe, notes, seconds, details) { navController.popBackStack() }
+                    },
                     onComplete = { sessionId, rpe, notes, actualDurationSeconds ->
-                        viewModel.clearWorkoutExecution(sessionId)
-                        viewModel.completeSession(sessionId, rpe, notes, actualDurationSeconds)
-                        navController.popBackStack()
+                        viewModel.completeSession(sessionId, rpe, notes, actualDurationSeconds, onSaved = { navController.popBackStack() })
                     },
                     onSkip = { sessionId, reason ->
                         viewModel.clearWorkoutExecution(sessionId)

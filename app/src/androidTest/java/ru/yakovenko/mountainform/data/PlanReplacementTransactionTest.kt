@@ -380,7 +380,7 @@ class PlanReplacementTransactionTest {
 
         val report = Json.decodeFromString<ReportEnvelope>(MountainFormRepository(dao).exportReport(today))
 
-        assertEquals(6, report.schemaVersion)
+        assertEquals(7, report.schemaVersion)
         assertEquals("SUSPECT", report.sessions.single().durationStatus)
         assertEquals("short-duration", report.sessions.single().id)
         assertEquals("upcoming", report.upcomingSessions.single().id)

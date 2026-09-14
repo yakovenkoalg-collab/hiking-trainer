@@ -47,7 +47,8 @@ object WorkoutPlanCompiler {
             blockId = step.blockId.ifBlank { step.id },
             blockTitle = step.blockTitle.ifBlank { "Основной блок" },
             sets = if (step.sets > 1) step.sets else parsedSets ?: 1,
-            reps = step.reps ?: parsedReps,
+            // A duration such as «2 × 40 сек» is not a repetition count.
+            reps = step.reps ?: parsedReps.takeIf { parsedSeconds == null && parsedMinutes == null && step.workSeconds == null },
             workSeconds = step.workSeconds ?: parsedSeconds ?: parsedMinutes?.times(60),
         )
     }

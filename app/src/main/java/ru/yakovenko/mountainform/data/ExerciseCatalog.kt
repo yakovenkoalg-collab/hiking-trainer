@@ -250,4 +250,13 @@ fun ExerciseStep.catalogId(): String = exerciseId.ifBlank {
     }
 }
 
-fun ExerciseStep.imageKey(): String = illustrationKey.ifBlank { catalogId() }
+fun ExerciseStep.imageKey(): String {
+    val base = illustrationKey.ifBlank { catalogId() }
+    // Stored plans predate variant-specific keys; resolve their artwork without rewriting the plan.
+    val singleLeg = title.contains("одной ног", ignoreCase = true)
+    return when {
+        singleLeg && base in setOf("bridge", "glute-bridge") -> "single-leg-bridge"
+        singleLeg && base in setOf("calf", "calf-raise") -> "single-leg-calf-raise"
+        else -> base
+    }
+}

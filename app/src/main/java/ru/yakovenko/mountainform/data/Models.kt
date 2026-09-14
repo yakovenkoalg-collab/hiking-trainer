@@ -53,6 +53,8 @@ data class TrainingSessionEntity(
     val planVersion: Int = 1,
     @ColumnInfo(defaultValue = "0") val originalEpochDay: Long = plannedEpochDay,
     @ColumnInfo(defaultValue = "''") val rescheduleReason: String = "",
+    val performedEpochDay: Long? = null,
+    @ColumnInfo(defaultValue = "'UNKNOWN'") val recordingMode: String = "UNKNOWN",
 )
 
 @Serializable
@@ -253,6 +255,7 @@ data class ImportedActivityEntity(
     val status: String = ActivityLinkStatus.UNLINKED,
     val importedAtEpochMillis: Long,
     val rawFileName: String? = null,
+    @ColumnInfo(defaultValue = "'UNKNOWN'") val heartRateSource: String = "UNKNOWN",
 )
 
 @Serializable
@@ -316,7 +319,7 @@ data class PlanSession(
 
 @Serializable
 data class ReportEnvelope(
-    val schemaVersion: Int = 6,
+    val schemaVersion: Int = 7,
     val generatedAtEpochMillis: Long,
     val periodStartEpochDay: Long,
     val periodEndEpochDay: Long,
@@ -365,6 +368,8 @@ data class ReportSession(
     val planVersion: Int = 1,
     val durationMinutes: Int = 0,
     val steps: List<ExerciseStep> = emptyList(),
+    val performedEpochDay: Long? = null,
+    val recordingMode: String = "UNKNOWN",
 )
 
 @Serializable
@@ -392,17 +397,17 @@ data class ReportSetLog(
     val stepId: String,
     val roundIndex: Int,
     val setIndex: Int,
-    val plannedReps: Int?,
-    val actualReps: Int?,
-    val loadKg: Double?,
-    val actualRpe: Int?,
-    val rir: Int?,
+    val plannedReps: Int? = null,
+    val actualReps: Int? = null,
+    val loadKg: Double? = null,
+    val actualRpe: Int? = null,
+    val rir: Int? = null,
     val pain: Boolean,
     val painNote: String,
     val elapsedSeconds: Int,
     val timingStatus: String,
     val plannedRestSeconds: Int,
-    val actualRestSeconds: Int?,
+    val actualRestSeconds: Int? = null,
     val restSkipped: Boolean,
 )
 
@@ -410,6 +415,7 @@ data class ReportSetLog(
 data class ReportActivity(
     val id: String,
     val sourceType: String,
+    val heartRateSource: String = "UNKNOWN",
     val title: String,
     val activityType: String,
     val startAtEpochMillis: Long,

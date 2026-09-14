@@ -65,6 +65,7 @@ fun ActivitiesScreen(
     onLinkActivity: (String, String?) -> Unit,
     onIgnoreActivity: (String) -> Unit,
     onRestoreActivity: (String) -> Unit,
+    onHeartRateSource: (String, String) -> Unit = { _, _ -> },
 ) {
     var linkingActivity by remember { mutableStateOf<ImportedActivityEntity?>(null) }
     var showSources by remember { mutableStateOf(false) }
@@ -201,6 +202,7 @@ fun ActivitiesScreen(
                         onUnlink = { onLinkActivity(activity.id, null) },
                         onIgnore = { onIgnoreActivity(activity.id) },
                         onRestore = { onRestoreActivity(activity.id) },
+                        onHeartRateSource = { onHeartRateSource(activity.id, it) },
                     )
                 }
             }
@@ -287,8 +289,10 @@ private fun ActivityCard(
     onUnlink: () -> Unit,
     onIgnore: () -> Unit,
     onRestore: () -> Unit,
+    onHeartRateSource: (String) -> Unit,
 ) {
     var detailsVisible by remember(activity.id) { mutableStateOf(false) }
+    var choosingSensor by remember(activity.id) { mutableStateOf(false) }
     val zoneSeconds = remember(activity.timeInHeartRateZonesJson) {
         decodeMetricList<Double>(activity.timeInHeartRateZonesJson)
     }
@@ -322,6 +326,11 @@ private fun ActivityCard(
                     activity.averagePowerWatts?.let { append("${it.toInt()} Вт") }
                 }.trim()
             if (secondaryMetrics.isNotBlank()) Text(secondaryMetrics, style = MaterialTheme.typography.bodySmall)
+            if (activity.averageHeartRate != null || activity.maxHeartRate != null) {
+                TextButton(onClick = { choosingSensor = true }) {
+                    Text("Датчик пульса: ${heartRateSourceLabel(activity.heartRateSource)}")
+                }
+            }
             if (activity.aerobicTrainingEffect != null || activity.trainingLoad != null || laps.isNotEmpty()) {
                 TextButton(onClick = { detailsVisible = !detailsVisible }) {
                     Text(if (detailsVisible) "Скрыть показатели" else "Показатели")
@@ -346,6 +355,27 @@ private fun ActivityCard(
             }
         }
     }
+    if (choosingSensor) AlertDialog(
+        onDismissRequest = { choosingSensor = false },
+        title = { Text("Источник пульса") },
+        text = {
+            Column {
+                Text("Укажите датчик для этой записи. Это ваша отметка, не результат определения по FIT.")
+                listOf("CHEST_USER", "WRIST_USER", "UNKNOWN").forEach { source ->
+                    TextButton(onClick = { onHeartRateSource(source); choosingSensor = false }, modifier = Modifier.fillMaxWidth()) {
+                        Text(heartRateSourceLabel(source))
+                    }
+                }
+            }
+        },
+        confirmButton = { TextButton(onClick = { choosingSensor = false }) { Text("Отмена") } },
+    )
+}
+
+private fun heartRateSourceLabel(source: String) = when (source) {
+    "CHEST_USER" -> "нагрудный"
+    "WRIST_USER" -> "часы"
+    else -> "не указан"
 }
 
 @Composable

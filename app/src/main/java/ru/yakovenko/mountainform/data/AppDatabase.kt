@@ -182,6 +182,26 @@ interface MountainFormDao {
     @Upsert
     suspend fun upsertSetLogs(logs: List<SessionSetLogEntity>)
 
+    @Transaction
+    suspend fun completeWithLogs(session: TrainingSessionEntity, logs: List<SessionSetLogEntity>) {
+        require(getSessions().firstOrNull { it.id == session.id }?.status == SessionStatus.PLANNED)
+        val existing = getSetLogs().filter { it.sessionId == session.id && it.completed }
+        // Retrospective entry must never replace measured results already saved.
+        upsertSetLogs(logs.filter { candidate -> existing.none {
+            it.stepId == candidate.stepId && it.roundIndex == candidate.roundIndex && it.setIndex == candidate.setIndex
+        } })
+        val targets = ru.yakovenko.mountainform.domain.WorkoutPlanCompiler.compile(
+            kotlinx.serialization.json.Json.decodeFromString<List<ExerciseStep>>(session.stepsJson),
+        )
+        val recorded = getSetLogs().filter { it.sessionId == session.id && it.completed }
+        targets.groupBy { it.step.id }.forEach { (stepId, stepTargets) ->
+            if (stepTargets.all { target -> recorded.any {
+                it.stepId == stepId && it.roundIndex == target.roundIndex && it.setIndex == target.setIndex
+            } }) upsertStepLog(SessionStepLogEntity(session.id, stepId, true, requireNotNull(session.completedAtEpochMillis)))
+        }
+        upsertSession(session)
+    }
+
     @Query("SELECT * FROM session_set_logs WHERE sessionId = :sessionId AND completed = 1 ORDER BY completedAtEpochMillis DESC")
     suspend fun getCompletedSetLogs(sessionId: String): List<SessionSetLogEntity>
 
@@ -412,7 +432,7 @@ interface MountainFormDao {
         ReviewCheckpointEntity::class,
         ImportedActivityEntity::class,
     ],
-    version = 6,
+    version = 7,
     exportSchema = true,
 )
 abstract class MountainFormDatabase : RoomDatabase() {
@@ -603,11 +623,20 @@ abstract class MountainFormDatabase : RoomDatabase() {
             }
         }
 
+        val MIGRATION_6_7 = object : Migration(6, 7) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                // Old completion timestamps are logging times, not evidence of the activity day.
+                db.execSQL("ALTER TABLE training_sessions ADD COLUMN performedEpochDay INTEGER")
+                db.execSQL("ALTER TABLE training_sessions ADD COLUMN recordingMode TEXT NOT NULL DEFAULT 'UNKNOWN'")
+                db.execSQL("ALTER TABLE imported_activities ADD COLUMN heartRateSource TEXT NOT NULL DEFAULT 'UNKNOWN'")
+            }
+        }
+
         fun create(context: Context): MountainFormDatabase =
             Room.databaseBuilder(
                 context.applicationContext,
                 MountainFormDatabase::class.java,
                 "mountain-form.db",
-            ).addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6).build()
+            ).addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7).build()
     }
 }

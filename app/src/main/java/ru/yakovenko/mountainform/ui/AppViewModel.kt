@@ -536,11 +536,31 @@ class AppViewModel(
         backupPreview.value = null
     }
 
-    fun completeSession(id: String, rpe: Int, notes: String, actualDurationSeconds: Int) {
+    fun setHeartRateSource(id: String, source: String) {
         viewModelScope.launch {
-            repository.completeSession(id, rpe, notes, actualDurationSeconds)
-            message.value = "Тренировка завершена"
+            repository.setHeartRateSource(id, source)
             automaticSyncIfEnabled()
+        }
+    }
+
+    private var completingSession = false
+
+    fun completeSession(id: String, rpe: Int, notes: String, actualDurationSeconds: Int, details: ru.yakovenko.mountainform.domain.SessionCompletionDetails = ru.yakovenko.mountainform.domain.SessionCompletionDetails(), onSaved: () -> Unit = {}) {
+        if (completingSession) return
+        completingSession = true
+        viewModelScope.launch {
+            try {
+                repository.completeSession(id, rpe, notes, actualDurationSeconds, details)
+                clearWorkoutExecution(id)
+                message.value = "Тренировка завершена"
+                onSaved()
+                automaticSyncIfEnabled()
+            } catch (error: Exception) {
+                if (error is kotlinx.coroutines.CancellationException) throw error
+                message.value = error.message ?: "Не удалось сохранить занятие. Повторите попытку."
+            } finally {
+                completingSession = false
+            }
         }
     }
 
