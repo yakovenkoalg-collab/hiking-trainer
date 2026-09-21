@@ -292,6 +292,36 @@ class PlanReplacementTransactionTest {
     }
 
     @Test
+    fun septemberTaperRequiresPreviewPreservesHistoryAndCannotBeAppliedTwice() = runBlocking {
+        val today = LocalDate.of(2026, 9, 21)
+        dao.upsertProfile(profile())
+        val past = session("july-uncompleted", SessionStatus.PLANNED)
+            .copy(plannedEpochDay = LocalDate.of(2026, 7, 31).toEpochDay())
+        val completed = session("completed-strength", SessionStatus.COMPLETED)
+            .copy(plannedEpochDay = today.toEpochDay())
+        dao.upsertSessions(listOf(past, completed))
+        val repository = MountainFormRepository(dao)
+        val preview = repository.proposeNextBaseBlock(today)
+        assertEquals(3, preview.plan.sessions.size)
+        assertEquals(2, dao.getSessions().size)
+        repository.applyPlan(preview, today)
+        assertEquals(past, dao.getSession(past.id))
+        assertEquals(completed, dao.getSession(completed.id))
+        assertEquals(5, dao.getSessions().size)
+        assertTrue(runCatching { repository.proposeNextBaseBlock(today) }.isFailure)
+    }
+
+    @Test
+    fun expiredTaperOrNewerExternalPlanNeverFallsBackToOldGeneration() = runBlocking {
+        dao.upsertProfile(profile())
+        val repository = MountainFormRepository(dao)
+        assertTrue(runCatching { repository.proposeNextBaseBlock(LocalDate.of(2026, 9, 28)) }.isFailure)
+        dao.upsertRevision(PlanRevisionEntity("external-next", Long.MAX_VALUE, 1, "test", "test", "{}", true))
+        assertTrue(runCatching { repository.proposeNextBaseBlock(LocalDate.of(2026, 9, 21)) }.isFailure)
+        assertTrue(dao.getSessions().isEmpty())
+    }
+
+    @Test
     fun newRevisionKeepsManuallyMovedWorkoutWithoutCreatingItsDuplicate() = runBlocking {
         val today = LocalDate.of(2026, 9, 10)
         dao.upsertProfile(profile().copy(shoulderRestrictionActive = false))

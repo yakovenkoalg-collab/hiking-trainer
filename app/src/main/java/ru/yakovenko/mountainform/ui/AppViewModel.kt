@@ -73,9 +73,9 @@ data class AppUiState(
         get() = TrainingSafety.evaluate(todayCheck)
 
     val nextSession: TrainingSessionEntity?
-        get() = sessions.firstOrNull {
+        get() = sessions.filter {
             it.status == "PLANNED" && it.plannedEpochDay >= LocalDate.now().toEpochDay()
-        } ?: sessions.firstOrNull { it.status == "PLANNED" }
+        }.minByOrNull { it.plannedEpochDay }
 }
 
 data class DataSyncState(

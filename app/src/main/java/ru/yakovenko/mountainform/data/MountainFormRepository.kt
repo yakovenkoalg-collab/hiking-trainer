@@ -831,6 +831,22 @@ class MountainFormRepository(
     suspend fun proposeNextBaseBlock(today: LocalDate = LocalDate.now()): ImportPreview {
         val existing = dao.getSessions()
         val revisions = dao.getRevisions().filter { it.applied }
+        if (!today.isBefore(ru.yakovenko.mountainform.domain.SeptemberTaperPlan.availableFrom)) {
+            val proposal = ru.yakovenko.mountainform.domain.SeptemberTaperPlan
+            val alreadyApplied = revisions.any { it.id == proposal.PLAN_ID }
+            val newerImportedPlan = revisions.any {
+                it.id != proposal.PLAN_ID && it.id != HomeRunningBlock.PLAN_ID &&
+                    !it.id.startsWith("home-kettlebell-week-v1-") &&
+                    !it.id.startsWith("progressed-hybrid-v2-") && !it.id.startsWith("agreed-hybrid-") &&
+                    it.importedAtEpochMillis >= proposal.availableFrom
+                        .atStartOfDay(java.time.ZoneId.systemDefault()).toInstant().toEpochMilli()
+            }
+            check(!today.isAfter(proposal.through) && !alreadyApplied && !newerImportedPlan) {
+                "Новых согласованных изменений нет. Установленный план и ваши переносы сохранены. " +
+                    "Обсудите следующую неделю и загрузите новый план через Обмен данными."
+            }
+            return previewPlan(json.encodeToString(proposal.envelope(today)), today)
+        }
         val profile = requireNotNull(dao.getProfile())
         val completedEpochDays = existing
             .filter { it.status == SessionStatus.COMPLETED }

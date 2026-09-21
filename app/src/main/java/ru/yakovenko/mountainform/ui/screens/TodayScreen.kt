@@ -174,7 +174,8 @@ fun TodayScreen(
             if (session == null) {
                 Card {
                     Column(Modifier.fillMaxWidth().padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                        Text("Следующих тренировок пока нет", fontWeight = FontWeight.Bold)
+                        Text("Нет тренировок на сегодня и следующие дни", fontWeight = FontWeight.Bold)
+                        Text("Согласуйте следующий план. Прошлые занятия доступны в календаре.")
                         OutlinedButton(onClick = onOpenCalendar, modifier = Modifier.fillMaxWidth()) {
                             Text("Открыть календарь")
                         }

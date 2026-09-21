@@ -102,6 +102,26 @@ class TodayScreenTest {
         composeRule.onNodeWithText("Сформировать отчёт").performScrollTo().assertIsDisplayed()
     }
 
+    @Test
+    fun pastWorkoutStaysInCalendarInsteadOfBeingOfferedAsNext() {
+        val today = LocalDate.now().toEpochDay()
+        val base = testState(today)
+        val state = base.copy(sessions = base.sessions.map { it.copy(plannedEpochDay = today - 52) })
+        var calendarOpened = false
+        composeRule.setContent {
+            MountainFormTheme {
+                TodayScreen(padding = PaddingValues(), state = state,
+                    onSaveReadiness = { _, _, _, _, _, _, _, _ -> }, onOpenSession = {},
+                    onOpenCalendar = { calendarOpened = true }, onCompleteCorePractice = {},
+                    onShareReviewReport = {})
+            }
+        }
+        composeRule.onNodeWithText("Нет тренировок на сегодня и следующие дни").performScrollTo().assertIsDisplayed()
+        composeRule.onNodeWithTag("open_next_session").assertDoesNotExist()
+        composeRule.onNodeWithText("Открыть календарь").performScrollTo().performClick()
+        assertTrue(calendarOpened)
+    }
+
     private fun testState(today: Long) = AppUiState(
         profile = UserProfileEntity(
             age = 41,
