@@ -4,9 +4,11 @@ import kotlinx.coroutines.flow.Flow
 import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
 import ru.yakovenko.mountainform.domain.AgreedHybridPlan
+import ru.yakovenko.mountainform.domain.BaseOneBlock
 import ru.yakovenko.mountainform.domain.HomeKettlebellWeekPlan
 import ru.yakovenko.mountainform.domain.HomeRunningBlock
 import ru.yakovenko.mountainform.domain.ProgressedHybridPlan
+import ru.yakovenko.mountainform.domain.SeasonGoals
 import ru.yakovenko.mountainform.domain.ShoulderSafety
 import ru.yakovenko.mountainform.domain.durationLooksImplausible
 import ru.yakovenko.mountainform.domain.SessionCompletionDetails
@@ -104,6 +106,7 @@ class MountainFormRepository(
                 ),
             )
         }
+        SeasonGoals.pendingUpserts(dao.getGoals()).takeIf { it.isNotEmpty() }?.let { dao.upsertGoals(it) }
         if (dao.sessionCount() == 0) {
             dao.upsertSessions(seedSessions(LocalDate.now()))
         }
@@ -656,6 +659,8 @@ class MountainFormRepository(
         append(step.title)
         append(" — ")
         append(step.prescription)
+        val dose = step.prescription.lowercase()
+        step.targetLabel()?.takeIf { "пульс" !in dose && "темп" !in dose }?.let { append(" · $it") }
         when {
             step.rounds > 1 -> append(" · ${step.rounds} круга")
             step.sets > 1 -> append(" · ${step.sets} подхода")
@@ -831,6 +836,24 @@ class MountainFormRepository(
     suspend fun proposeNextBaseBlock(today: LocalDate = LocalDate.now()): ImportPreview {
         val existing = dao.getSessions()
         val revisions = dao.getRevisions().filter { it.applied }
+        if (!today.isBefore(BaseOneBlock.availableFrom)) {
+            val alreadyApplied = revisions.any { it.id == BaseOneBlock.PLAN_ID }
+            val newerImportedPlan = revisions.any {
+                it.id != BaseOneBlock.PLAN_ID && it.id != BaseOneBlock.SUPERSEDED_FILE_PLAN_ID &&
+                    it.importedAtEpochMillis >= BaseOneBlock.availableFrom
+                        .atStartOfDay(java.time.ZoneId.systemDefault()).toInstant().toEpochMilli()
+            }
+            check(!today.isAfter(BaseOneBlock.through) && !alreadyApplied && !newerImportedPlan) {
+                "Новых согласованных изменений нет. Установленный план и ваши переносы сохранены. " +
+                    "Обсудите следующий блок и загрузите новый план через Обмен данными."
+            }
+            val restrictedShoulderPhase = requireNotNull(dao.getProfile())
+                .let { profile -> profile.shoulderLoadPhase.takeIf { profile.shoulderRestrictionActive } }
+            return previewPlan(
+                json.encodeToString(BaseOneBlock.envelope(today, restrictedShoulderPhase = restrictedShoulderPhase)),
+                today,
+            )
+        }
         if (!today.isBefore(ru.yakovenko.mountainform.domain.SeptemberTaperPlan.availableFrom)) {
             val proposal = ru.yakovenko.mountainform.domain.SeptemberTaperPlan
             val alreadyApplied = revisions.any { it.id == proposal.PLAN_ID }

@@ -1,5 +1,7 @@
 package ru.yakovenko.mountainform.data
 
+import ru.yakovenko.mountainform.domain.BaseOneBlock
+import ru.yakovenko.mountainform.domain.HeartRateTarget
 import androidx.room.Room
 import androidx.test.platform.app.InstrumentationRegistry
 import kotlinx.coroutines.runBlocking
@@ -309,6 +311,42 @@ class PlanReplacementTransactionTest {
         assertEquals(completed, dao.getSession(completed.id))
         assertEquals(5, dao.getSessions().size)
         assertTrue(runCatching { repository.proposeNextBaseBlock(today) }.isFailure)
+    }
+
+    @Test
+    fun baseOneAppliesUnderShoulderRestrictionSupersedesItsFileVersionAndCannotBeAppliedTwice() = runBlocking {
+        val today = LocalDate.of(2026, 10, 12)
+        dao.upsertProfile(profile())
+        val completed = session("completed-run", SessionStatus.COMPLETED)
+            .copy(plannedEpochDay = LocalDate.of(2026, 10, 11).toEpochDay())
+        val recovery = session("post-half-planned", SessionStatus.PLANNED)
+            .copy(plannedEpochDay = LocalDate.of(2026, 10, 16).toEpochDay())
+        dao.upsertSessions(listOf(completed, recovery))
+        dao.upsertRevision(
+            PlanRevisionEntity(BaseOneBlock.SUPERSEDED_FILE_PLAN_ID, Long.MAX_VALUE, 1, "test", "test", "{}", true),
+        )
+        val repository = MountainFormRepository(dao)
+        val preview = repository.proposeNextBaseBlock(today)
+        assertEquals(BaseOneBlock.PLAN_ID, preview.plan.planId)
+        assertTrue(preview.conflicts.isEmpty())
+        assertEquals(20, preview.plan.sessions.size)
+        repository.applyPlan(preview, today)
+        assertEquals(completed, dao.getSession(completed.id))
+        assertEquals(null, dao.getSession(recovery.id))
+        assertEquals(21, dao.getSessions().size)
+        val easyRun = requireNotNull(dao.getSession("base1-${LocalDate.of(2026, 10, 13).toEpochDay()}"))
+        assertEquals(BaseOneBlock.EASY_HEART_RATE_MAX, HeartRateTarget.sessionTarget(easyRun))
+        assertTrue(runCatching { repository.proposeNextBaseBlock(today.plusDays(1)) }.isFailure)
+    }
+
+    @Test
+    fun baseOneIsNotOfferedAfterItsLastDayOrOverANewerExternalPlan() = runBlocking {
+        dao.upsertProfile(profile())
+        val repository = MountainFormRepository(dao)
+        assertTrue(runCatching { repository.proposeNextBaseBlock(LocalDate.of(2026, 11, 16)) }.isFailure)
+        dao.upsertRevision(PlanRevisionEntity("base-two-file", Long.MAX_VALUE, 1, "test", "test", "{}", true))
+        assertTrue(runCatching { repository.proposeNextBaseBlock(LocalDate.of(2026, 10, 20)) }.isFailure)
+        assertTrue(dao.getSessions().isEmpty())
     }
 
     @Test

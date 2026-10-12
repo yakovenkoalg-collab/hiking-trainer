@@ -39,6 +39,7 @@ import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.ui.unit.dp
 import ru.yakovenko.mountainform.data.GoalEventEntity
 import ru.yakovenko.mountainform.data.GoalType
+import ru.yakovenko.mountainform.domain.SeasonGoals
 import ru.yakovenko.mountainform.data.ShoulderLoadPhase
 import ru.yakovenko.mountainform.data.UserProfileEntity
 import ru.yakovenko.mountainform.ui.AppUiState
@@ -58,7 +59,8 @@ fun ProfileSettingsScreen(
     onSaveGoal: (GoalEventEntity) -> Unit,
 ) {
     val profile = state.profile
-    val runningGoal = state.goals.firstOrNull { it.type == GoalType.RUNNING }
+    val runningGoal = state.goals.firstOrNull { it.id == SeasonGoals.SPRING_RACE_ID }
+        ?: state.goals.firstOrNull { it.type == GoalType.RUNNING }
     if (profile == null) {
         Scaffold(topBar = { TopAppBar(title = { Text("Профиль") }) }) { padding ->
             Text("Загрузка…", Modifier.padding(padding).padding(20.dp))

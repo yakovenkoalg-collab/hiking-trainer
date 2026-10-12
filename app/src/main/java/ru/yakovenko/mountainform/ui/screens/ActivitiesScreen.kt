@@ -41,6 +41,7 @@ import ru.yakovenko.mountainform.data.ActivityLapSummary
 import ru.yakovenko.mountainform.data.ImportedActivityEntity
 import ru.yakovenko.mountainform.data.SessionStatus
 import ru.yakovenko.mountainform.data.TrainingSessionEntity
+import ru.yakovenko.mountainform.domain.HeartRateTarget
 import ru.yakovenko.mountainform.health.HealthSummary
 import ru.yakovenko.mountainform.ui.formatEpochDay
 import ru.yakovenko.mountainform.ui.oneDecimal
@@ -297,6 +298,11 @@ private fun ActivityCard(
         decodeMetricList<Double>(activity.timeInHeartRateZonesJson)
     }
     val laps = remember(activity.lapsJson) { decodeMetricList<ActivityLapSummary>(activity.lapsJson) }
+    val heartRateCompliance = remember(activity, linkedSession) {
+        linkedSession?.let(HeartRateTarget::sessionTarget)
+            ?.let { HeartRateTarget.compliance(activity, it) }
+            ?.let(::heartRateComplianceText)
+    }
     Card {
         Column(Modifier.fillMaxWidth().padding(14.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
             Text(activity.title, fontWeight = FontWeight.Bold)
@@ -326,6 +332,15 @@ private fun ActivityCard(
                     activity.averagePowerWatts?.let { append("${it.toInt()} Вт") }
                 }.trim()
             if (secondaryMetrics.isNotBlank()) Text(secondaryMetrics, style = MaterialTheme.typography.bodySmall)
+            heartRateCompliance?.let { compliance ->
+                Text(
+                    compliance.headline,
+                    style = MaterialTheme.typography.bodyMedium,
+                    fontWeight = FontWeight.Bold,
+                    color = if (compliance.needsAttention) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.primary,
+                )
+                Text(compliance.detail, style = MaterialTheme.typography.bodySmall)
+            }
             if (activity.averageHeartRate != null || activity.maxHeartRate != null) {
                 TextButton(onClick = { choosingSensor = true }) {
                     Text("Датчик пульса: ${heartRateSourceLabel(activity.heartRateSource)}")

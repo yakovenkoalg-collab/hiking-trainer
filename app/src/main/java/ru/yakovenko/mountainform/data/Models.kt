@@ -290,7 +290,31 @@ data class ExerciseStep(
     val reps: Int? = null,
     val workSeconds: Int? = null,
     val restAfterRoundSeconds: Int = 0,
+    /** Upper heart-rate bound for the step, beats per minute. A ceiling, never a target to reach. */
+    val targetHeartRateMax: Int? = null,
+    /** Lower heart-rate bound for steady efforts such as threshold work; absent for easy running. */
+    val targetHeartRateMin: Int? = null,
+    /** Target pace range in seconds per kilometre: [targetPaceFastSecPerKm] is the quicker bound. */
+    val targetPaceFastSecPerKm: Int? = null,
+    val targetPaceSlowSecPerKm: Int? = null,
 )
+
+/** Planned intensity of a step as short text, or null when the step has no heart-rate or pace target. */
+fun ExerciseStep.targetLabel(): String? {
+    fun pace(seconds: Int) = "%d:%02d".format(seconds / 60, seconds % 60)
+    val heartRate = when {
+        targetHeartRateMin != null && targetHeartRateMax != null -> "пульс $targetHeartRateMin–$targetHeartRateMax"
+        targetHeartRateMax != null -> "пульс до $targetHeartRateMax"
+        targetHeartRateMin != null -> "пульс от $targetHeartRateMin"
+        else -> null
+    }
+    val paceRange = when {
+        targetPaceFastSecPerKm != null && targetPaceSlowSecPerKm != null && targetPaceFastSecPerKm != targetPaceSlowSecPerKm ->
+            "темп ${pace(targetPaceFastSecPerKm)}–${pace(targetPaceSlowSecPerKm)}/км"
+        else -> (targetPaceFastSecPerKm ?: targetPaceSlowSecPerKm)?.let { "темп ${pace(it)}/км" }
+    }
+    return listOfNotNull(paceRange, heartRate).joinToString(" · ").ifEmpty { null }
+}
 
 @Serializable
 data class PlanEnvelope(
@@ -510,4 +534,5 @@ object ShoulderLoadPhase {
 object GoalType {
     const val MOUNTAIN = "MOUNTAIN"
     const val RUNNING = "RUNNING"
+    const val CHECKPOINT = "CHECKPOINT"
 }

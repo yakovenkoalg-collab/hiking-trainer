@@ -28,8 +28,9 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
-import ru.yakovenko.mountainform.data.GoalType
 import ru.yakovenko.mountainform.data.SessionStatus
+import ru.yakovenko.mountainform.domain.HeartRateTarget
+import ru.yakovenko.mountainform.domain.RunningVolume
 import ru.yakovenko.mountainform.health.HealthSummary
 import ru.yakovenko.mountainform.ui.AppUiState
 import ru.yakovenko.mountainform.ui.components.MetricCard
@@ -54,6 +55,10 @@ fun ProgressScreen(
     val completion = if (planned == 0) 0f else completed.toFloat() / planned
     val practices = state.practices.count { it.epochDay in weekStart..today }
     val latestBody = state.bodyMetrics.firstOrNull()
+    val runningWeeks = remember(state.importedActivities, state.sessions, today) {
+        RunningVolume.weeks(state.importedActivities, state.sessions, LocalDate.ofEpochDay(today))
+    }
+    val easyHeartRateMax = remember(state.sessions, today) { HeartRateTarget.currentTarget(state.sessions, today) }
     val healthMetrics = buildList {
         if (healthSummary.workouts > 0) add("тренировок" to healthSummary.workouts.toString())
         if (healthSummary.distanceKm > 0) add("дистанция" to "${healthSummary.distanceKm.oneDecimal()} км")
@@ -100,6 +105,7 @@ fun ProgressScreen(
                 }
             }
         }
+        item { RunningWeeksCard(runningWeeks, easyHeartRateMax) }
         item {
             if (practices > 0) {
                 MetricCard("core и осанка за 7 дней", "$practices × 10 мин", Modifier.fillMaxWidth())
@@ -134,17 +140,7 @@ fun ProgressScreen(
                 Text(if (latestBody == null) "Добавить показатели тела" else "Обновить показатели тела")
             }
         }
-        state.goals.firstOrNull { it.type == GoalType.RUNNING }?.let { goal ->
-            item {
-                Card {
-                    Column(Modifier.fillMaxWidth().padding(14.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                        Text("Беговая цель", style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.primary)
-                        Text(goal.title, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
-                        Text(goal.notes, style = MaterialTheme.typography.bodySmall)
-                    }
-                }
-            }
-        }
+        item { SeasonCard(state.goals, today) }
     }
 
     if (showBodyMetric) {
