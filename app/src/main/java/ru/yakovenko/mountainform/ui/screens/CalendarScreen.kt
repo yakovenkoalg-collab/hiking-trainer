@@ -58,6 +58,7 @@ fun CalendarScreen(
     onOpenSession: (String) -> Unit,
     onReschedule: (String, Long, String) -> Unit,
     onProposeNextBlock: () -> Unit,
+    agreedPlanAvailable: Boolean = false,
 ) {
     var selectedMonth by remember { mutableStateOf(YearMonth.now()) }
     var selectedDate by remember { mutableStateOf(LocalDate.now()) }
@@ -101,7 +102,7 @@ fun CalendarScreen(
                 selectedDate.dayOfMonth.toString() + " " +
                     selectedDate.month.getDisplayName(TextStyle.FULL, Locale.forLanguageTag("ru")),
                 if (selectedSessions.isEmpty()) {
-                    "Тренировок нет"
+                    "Свободный день"
                 } else {
                     buildList {
                         if (selectedCompleted > 0) add(statusCount(selectedCompleted, "выполнена", "выполнены", "выполнено"))
@@ -111,13 +112,7 @@ fun CalendarScreen(
                 },
             )
         }
-        if (selectedSessions.isEmpty()) {
-            item {
-                Card {
-                    Text("Свободный день", Modifier.padding(16.dp))
-                }
-            }
-        } else {
+        if (selectedSessions.isNotEmpty()) {
             items(selectedSessions.size, key = { selectedSessions[it].id }) { index ->
                 val session = selectedSessions[index]
                 CalendarSessionCard(
@@ -139,11 +134,15 @@ fun CalendarScreen(
                 )
             }
         }
-        if (bufferDays <= 14) {
+        if (bufferDays <= 14 || agreedPlanAvailable) {
             item {
                 Card {
                     Column(Modifier.fillMaxWidth().padding(14.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                        Text("План до ${formatEpochDay(lastPlannedDay)}", fontWeight = FontWeight.Bold)
+                        Text(
+                            if (agreedPlanAvailable && bufferDays > 14) "Есть новая редакция плана"
+                            else "План до ${formatEpochDay(lastPlannedDay)}",
+                            fontWeight = FontWeight.Bold,
+                        )
                         Text(trainingCount(futurePlanned, "предстоящая", "предстоящие", "предстоящих"), style = MaterialTheme.typography.bodySmall)
                         Button(onClick = onProposeNextBlock, modifier = Modifier.fillMaxWidth()) {
                             Text("Согласованный план")
@@ -236,6 +235,22 @@ private fun MonthCalendar(
                                 onClick = { onSelectDate(date) },
                             )
                         }
+                    }
+                }
+            }
+            Row(
+                Modifier.fillMaxWidth().padding(top = 4.dp),
+                horizontalArrangement = Arrangement.spacedBy(14.dp, Alignment.CenterHorizontally),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                listOf(
+                    MaterialTheme.colorScheme.tertiary to "бег",
+                    MaterialTheme.colorScheme.primary to "сила",
+                    MaterialTheme.colorScheme.secondary to "восстановление",
+                ).forEach { (color, label) ->
+                    Row(horizontalArrangement = Arrangement.spacedBy(4.dp), verticalAlignment = Alignment.CenterVertically) {
+                        Box(Modifier.size(6.dp).background(color, CircleShape))
+                        Text(label, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                     }
                 }
             }

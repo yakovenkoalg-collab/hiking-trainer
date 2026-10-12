@@ -839,7 +839,7 @@ class MountainFormRepository(
         if (!today.isBefore(BaseOneBlock.availableFrom)) {
             val alreadyApplied = revisions.any { it.id == BaseOneBlock.PLAN_ID }
             val newerImportedPlan = revisions.any {
-                it.id != BaseOneBlock.PLAN_ID && it.id != BaseOneBlock.SUPERSEDED_FILE_PLAN_ID &&
+                it.id != BaseOneBlock.PLAN_ID && it.id !in BaseOneBlock.SUPERSEDED_PLAN_IDS &&
                     it.importedAtEpochMillis >= BaseOneBlock.availableFrom
                         .atStartOfDay(java.time.ZoneId.systemDefault()).toInstant().toEpochMilli()
             }

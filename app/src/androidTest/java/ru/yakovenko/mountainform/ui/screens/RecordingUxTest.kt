@@ -43,6 +43,20 @@ class RecordingUxTest {
         }
     }
 
+    @Test fun retrospectiveMarksEverythingWithOneTap() {
+        var logged = 0
+        rule.setContent { MountainFormTheme {
+            RetrospectiveSessionDialog("test", WorkoutPlanCompiler.compile(steps), emptyList(), {}, { _, _, _, metadata ->
+                logged = metadata.retrospectiveLogs.size
+            })
+        } }
+        rule.onNodeWithTag("actual_minutes").performTextInput("30")
+        rule.onNodeWithTag("retrospective_content").performScrollToNode(hasTestTag("retro_select_all"))
+        rule.onNodeWithTag("retro_select_all").performClick()
+        rule.onNodeWithTag("save_retrospective").performClick()
+        rule.runOnIdle { assertEquals(2, logged) }
+    }
+
     @Test fun overviewAndExecutionSupportLargeFont() {
         rule.setContent {
             CompositionLocalProvider(LocalDensity provides Density(LocalDensity.current.density, 1.5f)) {

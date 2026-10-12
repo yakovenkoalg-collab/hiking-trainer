@@ -7,6 +7,7 @@ import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.input.KeyboardType
@@ -28,7 +29,7 @@ internal fun RecordingDateField(value: String, onChange: (String) -> Unit) {
     OutlinedTextField(
         value = value, onValueChange = onChange,
         label = { Text("Дата занятия") },
-        supportingText = { Text("ДД.ММ.ГГГГ · не дата заполнения отчёта") },
+        supportingText = { Text("ДД.ММ.ГГГГ") },
         isError = parseRecordingDay(value) == null,
         singleLine = true, modifier = Modifier.fillMaxWidth().testTag("performed_date"),
     )
@@ -57,18 +58,29 @@ internal fun RetrospectiveSessionDialog(
             Column(Modifier.padding(20.dp)) {
                 Text("Уже выполнил", style = MaterialTheme.typography.titleLarge)
                 LazyColumn(Modifier.weight(1f, fill = false).testTag("retrospective_content"), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                    item { Text("Отметьте выполненные подходы. Секундомер и отдых не записываются; прежние результаты сохранятся.", style = MaterialTheme.typography.bodySmall) }
                     item { RecordingDateField(date) { date = it } }
                     item {
                         OutlinedTextField(duration, { duration = it.filter(Char::isDigit).take(3) },
                             label = { Text("Фактическое время, мин") },
-                            supportingText = { Text("Вся тренировка, включая отдых · 1–720 мин") },
+                            supportingText = { Text("Вместе с отдыхом") },
                             keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
                             modifier = Modifier.fillMaxWidth().testTag("actual_minutes"))
                     }
                     item {
                         Text("Нагрузка: ${rpe.toInt()}/10 RPE")
                         Slider(rpe, { rpe = it }, valueRange = 1f..10f, steps = 8)
+                    }
+                    item {
+                        val open = targets.indices.filter { !isRecorded(targets[it]) }
+                        val allSelected = open.isNotEmpty() && selected.containsAll(open)
+                        Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                            Text("Что выполнено", style = MaterialTheme.typography.labelLarge, modifier = Modifier.weight(1f))
+                            TextButton(
+                                onClick = { selected = if (allSelected) emptySet() else open.toSet() },
+                                enabled = open.isNotEmpty(),
+                                modifier = Modifier.testTag("retro_select_all"),
+                            ) { Text(if (allSelected) "Снять все" else "Отметить все") }
+                        }
                     }
                     itemsIndexed(targets) { index, target ->
                         val recorded = isRecorded(target)
@@ -79,8 +91,11 @@ internal fun RetrospectiveSessionDialog(
                             Column(Modifier.weight(1f)) {
                                 Text(target.step.title)
                                 Text(buildString {
-                                    append(if (target.totalRounds > 1) "Круг ${target.roundIndex}" else "Подход ${target.setIndex}")
-                                    append(" · ${target.doseLabel()}")
+                                    when {
+                                        target.totalRounds > 1 -> append("Круг ${target.roundIndex} · ")
+                                        target.totalSets > 1 -> append("Подход ${target.setIndex} · ")
+                                    }
+                                    append(target.doseLabel())
                                     if (recorded) append(" · уже записан")
                                 }, style = MaterialTheme.typography.bodySmall)
                             }

@@ -164,6 +164,9 @@ class AppViewModel(
 
     val healthSummary = MutableStateFlow(HealthSummary())
     val importPreview = MutableStateFlow<ImportPreview?>(null)
+
+    /** True while this app version carries an agreed plan revision that has not been applied yet. */
+    val agreedPlanAvailable = MutableStateFlow(false)
     val backupPreview = MutableStateFlow<BackupPreview?>(null)
     val message = MutableStateFlow<String?>(null)
     val updateState = MutableStateFlow(UpdateState())
@@ -176,6 +179,7 @@ class AppViewModel(
     init {
         viewModelScope.launch {
             repository.initialize()
+            refreshAgreedPlanAvailability()
             refreshHealth()
             refreshUpdateState(showErrors = false)
         }
@@ -636,6 +640,7 @@ class AppViewModel(
                 .onSuccess {
                     importPreview.value = null
                     message.value = "Новый план применён"
+                    refreshAgreedPlanAvailability()
                     val name = pendingSharedPlanName
                     val raw = pendingSharedPlanJson
                     val folder = uiState.value.settings?.sharedFolderUri?.let(Uri::parse)
@@ -657,6 +662,10 @@ class AppViewModel(
 
     fun dismissImport() {
         importPreview.value = null
+    }
+
+    private suspend fun refreshAgreedPlanAvailability() {
+        agreedPlanAvailable.value = runCatching { repository.proposeNextBaseBlock() }.isSuccess
     }
 
     fun proposeNextBaseBlock() {

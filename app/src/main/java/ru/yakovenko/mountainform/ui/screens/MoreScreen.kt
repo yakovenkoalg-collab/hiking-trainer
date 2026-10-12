@@ -54,7 +54,7 @@ fun MoreScreen(
             SettingsEntry(
                 Icons.Default.Person,
                 "Профиль и цели",
-                state.profile?.let { "${it.age} лет · ${it.preferredDays}" } ?: "Загрузка…",
+                state.profile?.let { "${ageLabel(it.age)} · ${it.preferredDays}" } ?: "Загрузка…",
                 onOpenProfile,
             )
         }
@@ -136,4 +136,11 @@ private fun SettingsEntry(
             Icon(Icons.AutoMirrored.Filled.ArrowForward, contentDescription = null)
         }
     }
+}
+
+internal fun ageLabel(age: Int): String = when {
+    age % 100 in 11..14 -> "$age лет"
+    age % 10 == 1 -> "$age год"
+    age % 10 in 2..4 -> "$age года"
+    else -> "$age лет"
 }

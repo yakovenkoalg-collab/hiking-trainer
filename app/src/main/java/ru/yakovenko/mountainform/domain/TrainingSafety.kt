@@ -12,13 +12,15 @@ data class ReadinessDecision(
 )
 
 object TrainingSafety {
+    const val NO_CHECK_REASON = "нет оценки состояния на сегодня"
+
     fun evaluate(check: ReadinessCheckEntity?): ReadinessDecision {
         if (check == null) {
             return ReadinessDecision(
                 ReadinessLevel.YELLOW,
                 "Сначала отметьте состояние",
                 "Короткая проверка нужна перед изменением нагрузки.",
-                listOf("нет оценки состояния на сегодня"),
+                listOf(NO_CHECK_REASON),
             )
         }
         val stopReasons = buildList {

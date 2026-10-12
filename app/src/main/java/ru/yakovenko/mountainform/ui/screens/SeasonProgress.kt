@@ -15,6 +15,13 @@ import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.platform.testTag
+import androidx.compose.runtime.setValue
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.getValue
+import androidx.compose.material3.TextButton
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -236,26 +243,37 @@ internal fun upcomingCheckpoints(goals: List<GoalEventEntity>, todayEpochDay: Lo
     .sortedBy { it.targetEpochDay }
     .take(UPCOMING_CHECKPOINTS)
 
+/** The headline of a goal note: its first fragment, e.g. «Цель 1:45». */
+internal fun goalHeadline(notes: String): String = notes.substringBefore(" · ").trim()
+
 @Composable
 internal fun SeasonCard(goals: List<GoalEventEntity>, todayEpochDay: Long) {
     val targets = goals.filter { it.type == GoalType.RUNNING || it.type == GoalType.MOUNTAIN }
     val checkpoints = upcomingCheckpoints(goals, todayEpochDay)
     if (targets.isEmpty() && checkpoints.isEmpty()) return
+    var expanded by remember { mutableStateOf(false) }
     Card {
         Column(Modifier.fillMaxWidth().padding(14.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
             Text("Цели сезона", fontWeight = FontWeight.Bold)
-            targets.forEach { goal -> SeasonEntry(goal, todayEpochDay) }
+            targets.forEach { goal -> SeasonEntry(goal, todayEpochDay, expanded) }
             if (checkpoints.isNotEmpty()) {
                 HorizontalDivider()
-                Text("Контрольные точки", style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.primary)
-                checkpoints.forEach { checkpoint -> SeasonEntry(checkpoint, todayEpochDay) }
+                Text(
+                    if (expanded) "Контрольные точки" else "Ближайшая контрольная точка",
+                    style = MaterialTheme.typography.labelLarge,
+                    color = MaterialTheme.colorScheme.primary,
+                )
+                (if (expanded) checkpoints else checkpoints.take(1)).forEach { SeasonEntry(it, todayEpochDay, expanded) }
+            }
+            TextButton(onClick = { expanded = !expanded }, modifier = Modifier.testTag("season_details_toggle")) {
+                Text(if (expanded) "Свернуть" else "Подробнее")
             }
         }
     }
 }
 
 @Composable
-private fun SeasonEntry(goal: GoalEventEntity, todayEpochDay: Long) {
+private fun SeasonEntry(goal: GoalEventEntity, todayEpochDay: Long, expanded: Boolean) {
     Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
         Text(goal.title, style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.Bold)
         goal.targetEpochDay?.let { day ->
@@ -266,6 +284,10 @@ private fun SeasonEntry(goal: GoalEventEntity, todayEpochDay: Long) {
                 color = MaterialTheme.colorScheme.primary,
             )
         }
-        if (goal.notes.isNotBlank()) Text(goal.notes, style = MaterialTheme.typography.bodySmall)
+        val notes = if (expanded || goal.type == GoalType.CHECKPOINT) goal.notes else goalHeadline(goal.notes)
+        if (notes.isNotBlank() && (expanded || goal.type != GoalType.CHECKPOINT)) {
+            Text(notes, style = MaterialTheme.typography.bodySmall, maxLines = if (expanded) Int.MAX_VALUE else 1,
+                overflow = TextOverflow.Ellipsis)
+        }
     }
 }

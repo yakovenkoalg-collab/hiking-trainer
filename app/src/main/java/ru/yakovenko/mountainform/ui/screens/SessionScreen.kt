@@ -90,6 +90,7 @@ import ru.yakovenko.mountainform.data.ShoulderLoadPhase
 import ru.yakovenko.mountainform.data.catalogId
 import ru.yakovenko.mountainform.data.canReopenCompletedSession
 import ru.yakovenko.mountainform.data.imageKey
+import ru.yakovenko.mountainform.data.targetLabel
 import ru.yakovenko.mountainform.ui.components.SafetyBanner
 import ru.yakovenko.mountainform.ui.formatEpochDay
 import ru.yakovenko.mountainform.domain.WorkoutPlanCompiler
@@ -99,6 +100,7 @@ import ru.yakovenko.mountainform.domain.WorkoutTimerMode
 import ru.yakovenko.mountainform.domain.ShoulderSafety
 import ru.yakovenko.mountainform.domain.durationLooksImplausible
 import ru.yakovenko.mountainform.domain.SessionCompletionDetails
+import ru.yakovenko.mountainform.domain.TrainingSafety
 import ru.yakovenko.mountainform.domain.doseLabel
 import java.time.LocalDate
 import java.time.Instant
@@ -181,7 +183,6 @@ fun SessionScreen(
     var showSetResult by remember { mutableStateOf(false) }
     var editResultOnly by remember { mutableStateOf(false) }
     var showResetTimerConfirm by remember { mutableStateOf(false) }
-    var showPlanDetails by remember(session.id) { mutableStateOf(false) }
     var showSafetyDetails by remember(session.id) { mutableStateOf(false) }
     var showStaleTimerWarning by remember(session.id) { mutableStateOf(staleExecutionAtOpen) }
     var showGarminPicker by remember(session.id) { mutableStateOf(false) }
@@ -654,25 +655,26 @@ fun SessionScreen(
             verticalArrangement = Arrangement.spacedBy(12.dp),
         ) {
             item {
-                Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                    Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(3.dp)) {
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    if (executionState.workoutStarted) {
+                        Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                            Text(
+                                "$completedCount из ${targets.size} этапов",
+                                style = MaterialTheme.typography.labelLarge,
+                                modifier = Modifier.weight(1f),
+                            )
+                            Text(formatDuration(workoutSeconds), style = MaterialTheme.typography.labelLarge)
+                        }
+                        LinearProgressIndicator(
+                            progress = { if (targets.isEmpty()) 0f else completedCount.toFloat() / targets.size },
+                            modifier = Modifier.fillMaxWidth(),
+                        )
+                    } else {
                         Text(formatEpochDay(session.plannedEpochDay), color = MaterialTheme.colorScheme.primary)
-                        Text(
-                            if (executionState.workoutStarted) {
-                                "${formatDuration(workoutSeconds)} · RPE ${session.targetRpe}"
-                            } else {
-                                "${session.durationMinutes} мин · RPE ${session.targetRpe}"
-                            },
+                        SessionFacts(
+                            listOfNotNull("${session.durationMinutes} мин", "RPE ${session.targetRpe}", sessionTargetLabel(steps)),
                         )
                     }
-                    LinearProgressIndicator(
-                        progress = { if (targets.isEmpty()) 0f else completedCount.toFloat() / targets.size },
-                        modifier = Modifier.fillMaxWidth(),
-                    )
-                    Text(
-                        if (executionState.workoutStarted) "$completedCount из ${targets.size} этапов" else "Упражнений: ${steps.size} · этапов: ${targets.size}",
-                        style = MaterialTheme.typography.labelMedium,
-                    )
                 }
             }
 
@@ -712,15 +714,19 @@ fun SessionScreen(
                 item {
                     Card {
                         Row(
-                            Modifier.fillMaxWidth().padding(horizontal = 14.dp, vertical = 7.dp),
+                            Modifier.fillMaxWidth().padding(horizontal = 14.dp),
                             verticalAlignment = Alignment.CenterVertically,
                         ) {
                             Text(
                                 when {
+                                    adaptationRequired && readinessReasons == listOf(TrainingSafety.NO_CHECK_REASON) ->
+                                        "Состояние не отмечено"
                                     adaptationRequired -> "Сегодня снизить нагрузку"
-                                    else -> "Плечо: ограничение активно"
+                                    else -> "Плечо ограничено"
                                 },
-                                fontWeight = FontWeight.SemiBold,
+                                style = MaterialTheme.typography.labelLarge,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis,
                                 modifier = Modifier.weight(1f),
                             )
                             TextButton(onClick = { showSafetyDetails = true }) { Text("Подробнее") }
@@ -730,40 +736,7 @@ fun SessionScreen(
             }
 
             if (showOverview && session.status == SessionStatus.PLANNED) {
-                item {
-                    Card {
-                        Column(
-                            Modifier.fillMaxWidth().padding(16.dp),
-                            verticalArrangement = Arrangement.spacedBy(9.dp),
-                        ) {
-                            Text("План тренировки", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
-                            if (showPlanDetails) Text(session.objective)
-                            targets.groupBy { it.blockId }.values.forEach { blockTargets ->
-                                val first = blockTargets.first()
-                                val uniqueExercises = blockTargets.distinctBy { it.step.id }
-                                Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(2.dp)) {
-                                    Text(
-                                        first.blockTitle,
-                                        color = MaterialTheme.colorScheme.primary,
-                                        fontWeight = FontWeight.SemiBold,
-                                    )
-                                    Text("Упражнений: ${uniqueExercises.size}", style = MaterialTheme.typography.bodySmall)
-                                }
-                                if (showPlanDetails) {
-                                    uniqueExercises.forEach { blockTarget ->
-                                        Column(Modifier.fillMaxWidth().padding(vertical = 4.dp)) {
-                                            Text(blockTarget.step.title, style = MaterialTheme.typography.bodyMedium)
-                                            Text(blockTarget.step.prescription, style = MaterialTheme.typography.bodySmall)
-                                        }
-                                    }
-                                }
-                            }
-                            TextButton(onClick = { showPlanDetails = !showPlanDetails }) {
-                                Text(if (showPlanDetails) "Скрыть подробности" else "Полный план")
-                            }
-                        }
-                    }
-                }
+                item { SessionPlanCard(session.objective, targets) }
             }
 
             if (showOverview || session.status != SessionStatus.PLANNED) {
@@ -807,6 +780,9 @@ fun SessionScreen(
                         Column(Modifier.fillMaxWidth()) {
                             Text(current.title, style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold)
                             Text(currentTarget.doseLabel(), style = MaterialTheme.typography.titleMedium, color = MaterialTheme.colorScheme.primary)
+                            current.targetLabel()?.takeIf { "пульс" !in current.prescription.lowercase() && "темп" !in current.prescription.lowercase() }?.let {
+                                Text(it, style = MaterialTheme.typography.titleMedium, color = MaterialTheme.colorScheme.primary)
+                            }
                             TextButton(onClick = { showTechnique = !showTechnique }) {
                                 Text(if (showTechnique) "Скрыть" else "Техника")
                             }
@@ -822,16 +798,27 @@ fun SessionScreen(
                                 verticalArrangement = Arrangement.spacedBy(8.dp),
                             ) {
                                 if (currentTarget.workSeconds != null) {
-                                    Text(if (setRunning) "Осталось" else "Таймер этапа", fontWeight = FontWeight.Bold)
-                                    Text(formatDuration(workRemaining), style = MaterialTheme.typography.headlineMedium)
-                                    if (!setRunning && currentLog == null) {
-                                        Text("Запустится по кнопке ниже", style = MaterialTheme.typography.bodySmall)
-                                    }
+                                    if (setRunning) Text("Осталось", style = MaterialTheme.typography.labelLarge)
+                                    Text(
+                                        formatDuration(workRemaining),
+                                        style = MaterialTheme.typography.displayMedium,
+                                        fontWeight = FontWeight.SemiBold,
+                                    )
                                 } else if (setSeconds > 0) {
-                                    Text("Время подхода", fontWeight = FontWeight.Bold)
-                                    Text(formatDuration(setSeconds), style = MaterialTheme.typography.headlineMedium)
-                                } else {
-                                    Text("Отметьте подход одним нажатием", fontWeight = FontWeight.SemiBold)
+                                    Text("Время подхода", style = MaterialTheme.typography.labelLarge)
+                                    Text(
+                                        formatDuration(setSeconds),
+                                        style = MaterialTheme.typography.displayMedium,
+                                        fontWeight = FontWeight.SemiBold,
+                                    )
+                                }
+                                targets.drop(targetIndex + 1).firstOrNull { it.step.id != current.id }?.let { next ->
+                                    Text(
+                                        "Дальше: ${next.step.title}",
+                                        style = MaterialTheme.typography.bodySmall,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                        modifier = Modifier.testTag("next_step_hint"),
+                                    )
                                 }
                                 if (currentLog != null) {
                                     Text(
@@ -1265,30 +1252,20 @@ private fun RestTimerState(
             )
             Text(
                 if (remainingSeconds > 0) formatDuration(remainingSeconds) else "Можно продолжать",
-                style = MaterialTheme.typography.headlineMedium,
-                fontWeight = FontWeight.Bold,
+                style = if (remainingSeconds > 0) MaterialTheme.typography.displayMedium else MaterialTheme.typography.headlineMedium,
+                fontWeight = FontWeight.SemiBold,
             )
             LinearProgressIndicator(
                 progress = { progress },
                 modifier = Modifier.fillMaxWidth(),
             )
-            Text(
-                when {
-                    paused -> "Таймер на паузе"
-                    remainingSeconds > 0 -> "Прошло ${formatDuration(elapsedSeconds)} из ${formatDuration(plannedSeconds)}"
-                    overtimeSeconds > 0 -> "Перерыв дольше плана на ${formatDuration(overtimeSeconds)}"
-                    else -> "Перерыв завершён"
-                },
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
-            source?.let {
-                Text(
-                    "Выполнено: ${it.step.title}",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    modifier = Modifier.fillMaxWidth(),
-                )
+            when {
+                paused -> "Таймер на паузе"
+                remainingSeconds > 0 -> null
+                overtimeSeconds > 0 -> "Перерыв дольше плана на ${formatDuration(overtimeSeconds)}"
+                else -> null
+            }?.let {
+                Text(it, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
             Surface(
                 modifier = Modifier.fillMaxWidth().testTag("next_exercise_preview"),
@@ -1296,18 +1273,16 @@ private fun RestTimerState(
                 shape = MaterialTheme.shapes.medium,
             ) {
                 Column(Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(3.dp)) {
-                    Text("Далее", style = MaterialTheme.typography.labelMedium)
-                    Text(next.step.title, fontWeight = FontWeight.Bold)
                     Text(
-                        buildString {
-                            append(next.step.prescription)
-                            when {
-                                next.totalRounds > 1 -> append(" · круг ${next.roundIndex} из ${next.totalRounds}")
-                                next.totalSets > 1 -> append(" · подход ${next.setIndex} из ${next.totalSets}")
-                            }
+                        when {
+                            next.totalRounds > 1 -> "Дальше · круг ${next.roundIndex} из ${next.totalRounds}"
+                            next.totalSets > 1 -> "Дальше · подход ${next.setIndex} из ${next.totalSets}"
+                            else -> "Дальше"
                         },
-                        style = MaterialTheme.typography.bodySmall,
+                        style = MaterialTheme.typography.labelMedium,
                     )
+                    Text(next.step.title, fontWeight = FontWeight.Bold)
+                    Text(next.doseLabel(), style = MaterialTheme.typography.bodySmall)
                 }
             }
             TextButton(onClick = onExtend, enabled = !paused) { Text("+15 секунд") }

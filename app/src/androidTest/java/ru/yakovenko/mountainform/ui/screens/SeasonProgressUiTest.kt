@@ -9,6 +9,8 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onNodeWithContentDescription
+import androidx.compose.ui.test.onNodeWithTag
+import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performScrollTo
 import androidx.compose.ui.unit.dp
@@ -102,7 +104,43 @@ class SeasonProgressUiTest {
         composeRule.onNodeWithText("Темп на пульсе до 148: 6:47/км").assertIsDisplayed()
         composeRule.onNodeWithText("Цели сезона").performScrollTo().assertIsDisplayed()
         composeRule.onNodeWithText("Осенний марафон: 42,2 км").performScrollTo().assertIsDisplayed()
+        composeRule.onNodeWithText("Ближайшая контрольная точка").performScrollTo().assertIsDisplayed()
+        composeRule.onNodeWithText("Цель быстрее 4:00").assertIsDisplayed()
+        composeRule.onNodeWithText("В полную силу, не медленнее 50:00").assertDoesNotExist()
+        composeRule.onNodeWithTag("season_details_toggle").performScrollTo().performClick()
         composeRule.onNodeWithText("Контрольные точки").performScrollTo().assertIsDisplayed()
+        composeRule.onNodeWithText("В полную силу, не медленнее 50:00").performScrollTo().assertIsDisplayed()
+    }
+
+    @Test
+    fun sessionOverviewShowsFactsShortPointsAndOneRowPerStep() {
+        val planned = BaseOneBlock.sessions().first { it.type == "STRENGTH" && it.durationMinutes == 60 }
+        val session = TrainingSessionEntity(
+            id = planned.id, plannedEpochDay = today.toEpochDay(), title = planned.title, type = planned.type,
+            phase = planned.phase, objective = planned.objective, durationMinutes = planned.durationMinutes,
+            targetRpe = planned.targetRpe, stepsJson = Json.encodeToString(planned.steps),
+        )
+        composeRule.setContent {
+            MountainFormTheme {
+                SessionScreen(
+                    padding = androidx.compose.foundation.layout.PaddingValues(), session = session, steps = planned.steps,
+                    catalog = emptyList(), stepLogs = emptyList(), setLogs = emptyList(), shoulderRestrictionActive = false,
+                    loadBlocked = false, adaptationRequired = false, readinessRecommendation = "",
+                    readinessReasons = emptyList(), initialExecutionState = null, onExecutionStateChanged = {},
+                    onStepCompleted = { _, _, _ -> }, onSaveSetLog = {}, onBack = {}, onEditReadiness = {},
+                    onComplete = { _, _, _, _ -> }, onSkip = { _, _ -> },
+                )
+            }
+        }
+        composeRule.onNodeWithText("60 мин").assertIsDisplayed()
+        composeRule.onNodeWithText("RPE 6").assertIsDisplayed()
+        composeRule.onNodeWithText("Не до отказа: 3–4 повтора в запасе.").assertIsDisplayed()
+        composeRule.onNodeWithText("Без боли в колене и плече.").assertDoesNotExist()
+        composeRule.onNodeWithTag("plan_points_toggle").performClick()
+        composeRule.onNodeWithText("Без боли в колене и плече.").assertIsDisplayed()
+        composeRule.onNodeWithText("3 × 10 · 16 кг", useUnmergedTree = true).assertExists()
+        composeRule.onNodeWithText("Упражнений:", substring = true).assertDoesNotExist()
+        composeRule.onNodeWithTag("plan_step_forearm-plank", useUnmergedTree = true).performScrollTo().assertIsDisplayed()
     }
 
     @Test

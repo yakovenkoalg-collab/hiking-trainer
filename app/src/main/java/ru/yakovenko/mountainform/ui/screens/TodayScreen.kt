@@ -318,13 +318,13 @@ private fun ReadinessDialog(
 
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text("Состояние перед тренировкой") },
+        title = { Text("Состояние сегодня") },
         text = {
             LazyColumn(verticalArrangement = Arrangement.spacedBy(14.dp)) {
-                item { RatingRow("Сон", sleep, "1 — очень плохо, 5 — отлично") { sleep = it } }
-                item { RatingRow("Энергия", energy, "1 — очень низкая, 5 — высокая") { energy = it } }
-                item { RatingRow("Усталость", fatigue, "1 — нет, 5 — сильная") { fatigue = it } }
-                item { RatingRow("Мышечная болезненность", soreness, "1 — нет, 5 — сильная") { soreness = it } }
+                item { RatingRow("Сон", sleep, "1 плохо · 5 отлично") { sleep = it } }
+                item { RatingRow("Энергия", energy, "1 низкая · 5 высокая") { energy = it } }
+                item { RatingRow("Усталость", fatigue, "1 нет · 5 сильная") { fatigue = it } }
+                item { RatingRow("Боль в мышцах", soreness, "1 нет · 5 сильная") { soreness = it } }
                 item {
                     PainSlider("Левое плечо", shoulder) { shoulder = it }
                 }
@@ -359,9 +359,11 @@ private fun ReadinessDialog(
 
 @Composable
 private fun RatingRow(label: String, value: Int, hint: String, onChange: (Int) -> Unit) {
-    Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
-        Text("$label: $value", style = MaterialTheme.typography.labelLarge)
-        Text(hint, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+    Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+        Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+            Text(label, style = MaterialTheme.typography.labelLarge, modifier = Modifier.weight(1f))
+            Text(hint, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        }
         Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
             (1..5).forEach { rating ->
                 FilterChip(
@@ -377,8 +379,7 @@ private fun RatingRow(label: String, value: Int, hint: String, onChange: (Int) -
 @Composable
 private fun PainSlider(label: String, value: Float, onChange: (Float) -> Unit) {
     Column {
-        Text("$label — боль ${value.toInt()}/10", style = MaterialTheme.typography.labelLarge)
-        Text("0 — нет боли, 10 — максимально сильная", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        Text("$label: боль ${value.toInt()} из 10", style = MaterialTheme.typography.labelLarge)
         Slider(value = value, onValueChange = onChange, valueRange = 0f..10f, steps = 9)
     }
 }

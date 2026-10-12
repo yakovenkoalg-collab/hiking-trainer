@@ -32,6 +32,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
@@ -303,35 +304,36 @@ private fun ActivityCard(
             ?.let { HeartRateTarget.compliance(activity, it) }
             ?.let(::heartRateComplianceText)
     }
+    val typeLabel = friendlyActivityType(activity.activityType)
+    val secondaryMetrics = buildString {
+        activity.elevationMeters?.let { append("набор +${it.toInt()} м  ") }
+        activity.descentMeters?.let { append("спуск −${it.toInt()} м  ") }
+        activity.maxHeartRate?.let { append("макс. пульс ${it.toInt()}  ") }
+        activity.averageCadence?.let { append("каденс ${it.toInt()} ${cadenceUnit(activity.activityType)}  ") }
+        activity.averagePowerWatts?.let { append("${it.toInt()} Вт") }
+    }.trim()
+    val hasHeartRate = activity.averageHeartRate != null || activity.maxHeartRate != null
+    val hasDetails = secondaryMetrics.isNotBlank() || hasHeartRate || activity.aerobicTrainingEffect != null ||
+        activity.trainingLoad != null || laps.isNotEmpty()
     Card {
-        Column(Modifier.fillMaxWidth().padding(14.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-            Text(activity.title, fontWeight = FontWeight.Bold)
-            Text(
-                "Тип: ${friendlyActivityType(activity.activityType)}",
-                style = MaterialTheme.typography.labelLarge,
-                color = MaterialTheme.colorScheme.primary,
-            )
-            Text("${formatActivityTime(activity.startAtEpochMillis)} · ${formatActivityDuration(activity.durationSeconds)}", style = MaterialTheme.typography.bodySmall)
-            Text(
-                buildString {
-                    activity.distanceMeters?.let { append("${formatDistance(it)} км  ") }
-                    formatMovementMetric(activity.activityType, activity.durationSeconds, activity.distanceMeters)?.let {
-                        append("$it  ")
-                    }
-                    activity.elevationMeters?.let { append("+${it.toInt()} м  ") }
-                    activity.descentMeters?.let { append("−${it.toInt()} м") }
-                }.ifBlank { activity.activityType },
-                style = MaterialTheme.typography.bodySmall,
-            )
-            val secondaryMetrics = buildString {
-                    activity.averageHeartRate?.let { append("пульс ${it.toInt()}") }
-                    activity.maxHeartRate?.let { append(" / ${it.toInt()}  ") }
-                    activity.averageCadence?.let {
-                        append("каденс ${it.toInt()} ${cadenceUnit(activity.activityType)}  ")
-                    }
-                    activity.averagePowerWatts?.let { append("${it.toInt()} Вт") }
-                }.trim()
-            if (secondaryMetrics.isNotBlank()) Text(secondaryMetrics, style = MaterialTheme.typography.bodySmall)
+        Column(Modifier.fillMaxWidth().padding(14.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            Column {
+                Text(activity.title, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+                Text(
+                    listOfNotNull(typeLabel.takeIf { it != activity.title }, formatActivityTime(activity.startAtEpochMillis))
+                        .joinToString(" · "),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(18.dp)) {
+                activity.distanceMeters?.let { ActivityStat("${formatDistance(it)} км", "дистанция") }
+                ActivityStat(formatActivityDuration(activity.durationSeconds), "время")
+                formatMovementMetric(activity.activityType, activity.durationSeconds, activity.distanceMeters)?.let {
+                    ActivityStat(it, if (it.endsWith("/км")) "темп" else "скорость")
+                }
+                activity.averageHeartRate?.let { ActivityStat(it.toInt().toString(), "пульс") }
+            }
             heartRateCompliance?.let { compliance ->
                 Text(
                     compliance.headline,
@@ -341,22 +343,29 @@ private fun ActivityCard(
                 )
                 Text(compliance.detail, style = MaterialTheme.typography.bodySmall)
             }
-            if (activity.averageHeartRate != null || activity.maxHeartRate != null) {
-                TextButton(onClick = { choosingSensor = true }) {
-                    Text("Датчик пульса: ${heartRateSourceLabel(activity.heartRateSource)}")
+            if (detailsVisible) {
+                if (secondaryMetrics.isNotBlank()) Text(secondaryMetrics, style = MaterialTheme.typography.bodySmall)
+                if (hasHeartRate) {
+                    TextButton(onClick = { choosingSensor = true }) {
+                        Text("Датчик пульса: ${heartRateSourceLabel(activity.heartRateSource)}")
+                    }
                 }
+                ActivityDetails(activity, zoneSeconds, laps)
             }
-            if (activity.aerobicTrainingEffect != null || activity.trainingLoad != null || laps.isNotEmpty()) {
+            if (hasDetails) {
                 TextButton(onClick = { detailsVisible = !detailsVisible }) {
                     Text(if (detailsVisible) "Скрыть показатели" else "Показатели")
                 }
             }
-            if (detailsVisible) {
-                ActivityDetails(activity, zoneSeconds, laps)
-            }
             if (linkedSession != null) {
-                Text("Связано: ${linkedSession.title}", color = MaterialTheme.colorScheme.primary)
-                TextButton(onClick = onUnlink) { Text("Убрать связь") }
+                Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                    Text(
+                        "Связано: ${linkedSession.title}",
+                        color = MaterialTheme.colorScheme.primary,
+                        modifier = Modifier.weight(1f),
+                    )
+                    TextButton(onClick = onUnlink) { Text("Убрать") }
+                }
             } else if (activity.status != ActivityLinkStatus.IGNORED) {
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     Button(onClick = onLink, modifier = Modifier.weight(1f)) { Text("Связать") }
@@ -391,6 +400,14 @@ private fun heartRateSourceLabel(source: String) = when (source) {
     "CHEST_USER" -> "нагрудный"
     "WRIST_USER" -> "часы"
     else -> "не указан"
+}
+
+@Composable
+private fun ActivityStat(value: String, label: String) {
+    Column {
+        Text(value, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
+        Text(label, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+    }
 }
 
 @Composable

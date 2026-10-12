@@ -2,6 +2,7 @@ package ru.yakovenko.mountainform.ui.screens
 
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.junit4.createComposeRule
+import androidx.compose.ui.test.onAllNodesWithText
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performScrollTo
@@ -136,8 +137,9 @@ class ActivitiesScreenTest {
         assertEquals(1, refreshes)
 
         composeRule.onNodeWithText("Велосипед").performScrollTo().assertIsDisplayed()
-        composeRule.onNodeWithText("Тип: Велосипед").performScrollTo().assertIsDisplayed()
+        composeRule.onNodeWithText("Тип: Велосипед").assertDoesNotExist()
         composeRule.onNodeWithText("20.0 км/ч", substring = true).performScrollTo().assertIsDisplayed()
+        composeRule.onAllNodesWithText("Показатели")[0].performScrollTo().performClick()
         composeRule.onNodeWithText("каденс 84 об/мин", substring = true).performScrollTo().assertIsDisplayed()
         composeRule.onNodeWithText("Связать").performScrollTo().performClick()
         composeRule.onNodeWithText("Связать с тренировкой").assertIsDisplayed()

@@ -78,6 +78,7 @@ fun MountainFormApp(
     val state by viewModel.uiState.collectAsStateWithLifecycle()
     val healthSummary by viewModel.healthSummary.collectAsStateWithLifecycle()
     val importPreview by viewModel.importPreview.collectAsStateWithLifecycle()
+    val agreedPlanAvailable by viewModel.agreedPlanAvailable.collectAsStateWithLifecycle()
     val backupPreview by viewModel.backupPreview.collectAsStateWithLifecycle()
     val message by viewModel.message.collectAsStateWithLifecycle()
     val updateState by viewModel.updateState.collectAsStateWithLifecycle()
@@ -167,6 +168,7 @@ fun MountainFormApp(
                     onOpenSession = { navController.navigate("session/$it") },
                     onReschedule = viewModel::rescheduleSession,
                     onProposeNextBlock = viewModel::proposeNextBaseBlock,
+                    agreedPlanAvailable = agreedPlanAvailable,
                 )
             }
             composable("progress") {

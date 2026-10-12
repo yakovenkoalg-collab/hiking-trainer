@@ -322,9 +322,9 @@ class PlanReplacementTransactionTest {
         val recovery = session("post-half-planned", SessionStatus.PLANNED)
             .copy(plannedEpochDay = LocalDate.of(2026, 10, 16).toEpochDay())
         dao.upsertSessions(listOf(completed, recovery))
-        dao.upsertRevision(
-            PlanRevisionEntity(BaseOneBlock.SUPERSEDED_FILE_PLAN_ID, Long.MAX_VALUE, 1, "test", "test", "{}", true),
-        )
+        BaseOneBlock.SUPERSEDED_PLAN_IDS.forEach { earlier ->
+            dao.upsertRevision(PlanRevisionEntity(earlier, Long.MAX_VALUE, 1, "test", "test", "{}", true))
+        }
         val repository = MountainFormRepository(dao)
         val preview = repository.proposeNextBaseBlock(today)
         assertEquals(BaseOneBlock.PLAN_ID, preview.plan.planId)

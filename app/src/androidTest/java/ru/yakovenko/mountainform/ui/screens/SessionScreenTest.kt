@@ -81,7 +81,8 @@ class SessionScreenTest {
             }
         }
 
-        composeRule.onNodeWithText("60 мин · RPE 5").assertIsDisplayed()
+        composeRule.onNodeWithText("60 мин").assertIsDisplayed()
+        composeRule.onNodeWithText("RPE 5").assertIsDisplayed()
         composeRule.onNodeWithText("План тренировки").assertIsDisplayed()
         composeRule.onNodeWithTag("start_workout_button").performClick()
         composeRule.onNodeWithTag("set_timer_button")
@@ -453,7 +454,6 @@ class SessionScreenTest {
 
         composeRule.onNodeWithTag("rest_timer_state").assertIsDisplayed()
         composeRule.onNodeWithText("Переход к следующему упражнению").assertIsDisplayed()
-        composeRule.onNodeWithText("Выполнено: Первое упражнение").assertIsDisplayed()
         composeRule.onNodeWithTag("next_exercise_preview").assertIsDisplayed()
         check(composeRule.onAllNodesWithText("Техника").fetchSemanticsNodes().isEmpty())
         composeRule.onNodeWithText("+15 секунд").performClick()

@@ -73,6 +73,8 @@ fun ProgressScreen(
         verticalArrangement = Arrangement.spacedBy(12.dp),
     ) {
         item { Text("Прогресс", style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.Bold) }
+        item { RunningWeeksCard(runningWeeks, easyHeartRateMax) }
+        item { SeasonCard(state.goals, today) }
         item {
             Card {
                 Column(Modifier.fillMaxWidth().padding(14.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -105,7 +107,6 @@ fun ProgressScreen(
                 }
             }
         }
-        item { RunningWeeksCard(runningWeeks, easyHeartRateMax) }
         item {
             if (practices > 0) {
                 MetricCard("core и осанка за 7 дней", "$practices × 10 мин", Modifier.fillMaxWidth())
@@ -140,7 +141,6 @@ fun ProgressScreen(
                 Text(if (latestBody == null) "Добавить показатели тела" else "Обновить показатели тела")
             }
         }
-        item { SeasonCard(state.goals, today) }
     }
 
     if (showBodyMetric) {
