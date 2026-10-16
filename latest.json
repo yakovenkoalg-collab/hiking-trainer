@@ -1,7 +1,7 @@
 {
-  "versionCode": 24,
-  "versionName": "0.3.21",
-  "apkUrl": "https://github.com/yakovenkoalg-collab/hiking-trainer/releases/download/v0.3.21/mountain-form-0.3.21.apk",
-  "sha256": "672079969a77fba367ddb7cadf48e0166d1ce9e08ec62e2c25e02470f96306d2",
-  "notes": "Схемы упражнений: миниатюры в плане тренировки и крупная схема под названием упражнения во время подхода; нажатие открывает схему на весь экран. План и расписание не меняются, повторно применять план не нужно."
+  "versionCode": 25,
+  "versionName": "0.3.22",
+  "apkUrl": "https://github.com/yakovenkoalg-collab/hiking-trainer/releases/download/v0.3.22/mountain-form-0.3.22.apk",
+  "sha256": "1a3122f0fd146641bc8511941d64772e091e778e014b1fa2ac5c3fc42464f726",
+  "notes": "Схемы и техника шести упражнений: отжимания, сплит-присед с гирей у груди, болгарский сплит-присед, тяга гири на одной ноге, зашагивание на опору с гирей, махи гирей. План и расписание не меняются, повторно применять план не нужно."
 }
