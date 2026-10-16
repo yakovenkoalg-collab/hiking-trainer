@@ -143,7 +143,7 @@ class SeasonProgressUiTest {
         composeRule.onNodeWithTag("plan_step_forearm-plank", useUnmergedTree = true).performScrollTo().assertIsDisplayed()
         composeRule.onNodeWithTag("plan_thumb_core", useUnmergedTree = true).performScrollTo().performClick()
         composeRule.onNodeWithText("Закрыть схему").assertIsDisplayed().performClick()
-        composeRule.onNodeWithTag("plan_thumb_push-up", useUnmergedTree = true).assertDoesNotExist()
+        composeRule.onNodeWithTag("plan_thumb_push-up", useUnmergedTree = true).assertExists()
         composeRule.onNodeWithTag("plan_thumb_warmup", useUnmergedTree = true).assertDoesNotExist()
     }
 

@@ -11,7 +11,7 @@ class ExerciseCatalogTest {
     fun seededCatalogHasInstructionsAndIllustrationsForEveryExercise() {
         val catalog = seedExerciseCatalog(Json)
 
-        assertEquals(20, catalog.size)
+        assertEquals(26, catalog.size)
         assertEquals(catalog.size, catalog.map { it.id }.distinct().size)
         assertTrue(catalog.all { it.setup.isNotBlank() && it.execution.isNotBlank() })
         assertTrue(catalog.all { it.breathing.isNotBlank() && it.illustrationKey.isNotBlank() })

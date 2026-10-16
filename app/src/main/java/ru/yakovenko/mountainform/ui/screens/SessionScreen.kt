@@ -1630,6 +1630,12 @@ internal fun IllustrationZoomDialog(@DrawableRes resource: Int, onDismiss: () ->
 @DrawableRes
 internal fun illustrationResource(key: String): Int? = when (key) {
     "split-squat" -> R.drawable.exercise_split_squat
+    "push-up" -> R.drawable.exercise_push_up
+    "goblet-split-squat" -> R.drawable.exercise_goblet_split_squat
+    "bulgarian-split-squat" -> R.drawable.exercise_bulgarian_split_squat
+    "single-leg-kb-deadlift" -> R.drawable.exercise_single_leg_kb_deadlift
+    "step-up" -> R.drawable.exercise_step_up
+    "kettlebell-swing" -> R.drawable.exercise_kettlebell_swing
     "pull-up" -> R.drawable.exercise_pull_up
     "forearm-plank" -> R.drawable.exercise_forearm_plank
     "single-leg-bridge" -> R.drawable.exercise_single_leg_bridge

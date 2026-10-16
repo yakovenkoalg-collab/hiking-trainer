@@ -80,10 +80,13 @@ class RecordingUxTest {
 
     @Test fun imageCanOpenAndCloseAndEveryCurrentPlanExerciseHasArtwork() {
         HomeRunningBlock.sessions().flatMap { it.steps }.forEach { assertNotNull("Missing ${it.title}: ${it.imageKey()}", illustrationResource(it.imageKey())) }
-        // Push-ups are self-explanatory and have no artwork yet; every other exercise of the current block must have one.
         BaseOneBlock.sessions().flatMap { it.steps }
-            .filter { it.catalogId() !in setOf("walk", "run-walk", "push-up") }
+            .filter { it.catalogId() !in setOf("walk", "run-walk") }
             .forEach { assertNotNull("Missing ${it.title}: ${it.imageKey()}", stepIllustration(it)) }
+        // Every catalog exercise except walking and running has a picture, including the ones for coming blocks.
+        seedExerciseCatalog(kotlinx.serialization.json.Json)
+            .filter { it.id !in setOf("walk", "aerobic", "run-walk") }
+            .forEach { assertNotNull("Missing artwork: ${it.id}", illustrationResource(it.illustrationKey)) }
         rule.setContent { MountainFormTheme { ExerciseIllustration("forearm-plank") } }
         rule.onNodeWithTag("exercise_illustration").performClick()
         rule.onNodeWithText("Закрыть схему").assertIsDisplayed().performClick()
