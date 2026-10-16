@@ -141,6 +141,10 @@ class SeasonProgressUiTest {
         composeRule.onNodeWithText("3 × 10 · 16 кг", useUnmergedTree = true).assertExists()
         composeRule.onNodeWithText("Упражнений:", substring = true).assertDoesNotExist()
         composeRule.onNodeWithTag("plan_step_forearm-plank", useUnmergedTree = true).performScrollTo().assertIsDisplayed()
+        composeRule.onNodeWithTag("plan_thumb_core", useUnmergedTree = true).performScrollTo().performClick()
+        composeRule.onNodeWithText("Закрыть схему").assertIsDisplayed().performClick()
+        composeRule.onNodeWithTag("plan_thumb_push-up", useUnmergedTree = true).assertDoesNotExist()
+        composeRule.onNodeWithTag("plan_thumb_warmup", useUnmergedTree = true).assertDoesNotExist()
     }
 
     @Test

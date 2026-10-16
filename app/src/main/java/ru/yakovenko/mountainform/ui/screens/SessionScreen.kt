@@ -789,6 +789,9 @@ fun SessionScreen(
                         }
                     }
                 }
+                if (executionState.timerMode != WorkoutTimerMode.REST) {
+                    stepIllustration(current)?.let { resource -> item { InlineExerciseIllustration(resource) } }
+                }
                 if (session.status == SessionStatus.PLANNED && executionState.timerMode != WorkoutTimerMode.REST) {
                     item {
                         Card {
@@ -900,7 +903,6 @@ fun SessionScreen(
                     }
                 }
                 if (showTechnique && executionState.timerMode != WorkoutTimerMode.REST) {
-                    item { ExerciseIllustration(current.imageKey()) }
                     item {
                         Card {
                             Column(Modifier.fillMaxWidth().padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -1577,7 +1579,32 @@ internal fun ExerciseIllustration(key: String) {
             }
         }
     }
-    if (expanded && resource != null) Dialog(onDismissRequest = { expanded = false }, properties = DialogProperties(usePlatformDefaultWidth = false)) {
+    if (expanded && resource != null) IllustrationZoomDialog(resource) { expanded = false }
+}
+
+/** Artwork of the exercise in a step, or null for walking and running, where a picture adds nothing. */
+@DrawableRes
+internal fun stepIllustration(step: ExerciseStep): Int? =
+    if (step.catalogId() in setOf("walk", "aerobic", "run-walk")) null else illustrationResource(step.imageKey())
+
+/** The exercise picture shown with the current set; a tap opens it full screen. */
+@Composable
+internal fun InlineExerciseIllustration(@DrawableRes resource: Int) {
+    var expanded by remember(resource) { mutableStateOf(false) }
+    Card(onClick = { expanded = true }) {
+        Image(
+            painter = painterResource(resource),
+            contentDescription = "Схема упражнения, нажмите для увеличения",
+            modifier = Modifier.fillMaxWidth().height(170.dp).padding(6.dp).testTag("inline_exercise_illustration"),
+            contentScale = ContentScale.Fit,
+        )
+    }
+    if (expanded) IllustrationZoomDialog(resource) { expanded = false }
+}
+
+@Composable
+internal fun IllustrationZoomDialog(@DrawableRes resource: Int, onDismiss: () -> Unit) {
+    Dialog(onDismissRequest = onDismiss, properties = DialogProperties(usePlatformDefaultWidth = false)) {
         var scale by remember { mutableFloatStateOf(1f) }
         var offset by remember { mutableStateOf(Offset.Zero) }
         val transform = rememberTransformableState { zoom, pan, _ ->
@@ -1586,7 +1613,7 @@ internal fun ExerciseIllustration(key: String) {
         }
         Surface(Modifier.fillMaxSize()) {
             Column {
-                TextButton(onClick = { expanded = false }, modifier = Modifier.fillMaxWidth()) { Text("Закрыть схему") }
+                TextButton(onClick = onDismiss, modifier = Modifier.fillMaxWidth()) { Text("Закрыть схему") }
                 Box(Modifier.weight(1f).fillMaxWidth().clipToBounds().transformable(transform), contentAlignment = Alignment.Center) {
                     Image(painterResource(resource), "Схема упражнения крупно",
                         modifier = Modifier.fillMaxWidth().graphicsLayer { scaleX = scale; scaleY = scale; translationX = offset.x; translationY = offset.y },

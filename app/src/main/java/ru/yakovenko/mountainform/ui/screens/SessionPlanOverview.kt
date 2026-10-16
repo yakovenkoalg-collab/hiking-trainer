@@ -1,6 +1,12 @@
 package ru.yakovenko.mountainform.ui.screens
 
 import androidx.compose.foundation.background
+import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.draw.clip
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -130,22 +136,43 @@ internal fun SessionPlanCard(objective: String, targets: List<WorkoutSetTarget>)
 
 @Composable
 private fun PlanStepRow(step: ExerciseStep) {
+    val illustration = remember(step) { stepIllustration(step) }
+    var zoomed by remember(step) { mutableStateOf(false) }
     Row(
         Modifier.fillMaxWidth().testTag("plan_step_${step.id}"),
         horizontalArrangement = Arrangement.spacedBy(12.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        Box(
-            Modifier.size(36.dp).background(MaterialTheme.colorScheme.secondaryContainer, CircleShape),
-            contentAlignment = Alignment.Center,
-        ) {
-            Icon(
-                stepIcon(step),
-                contentDescription = null,
-                tint = MaterialTheme.colorScheme.onSecondaryContainer,
-                modifier = Modifier.size(20.dp),
+        if (illustration != null) {
+            Image(
+                painter = painterResource(illustration),
+                contentDescription = "Схема: ${step.title}",
+                contentScale = ContentScale.Fit,
+                modifier = Modifier.size(width = 76.dp, height = 52.dp)
+                    .clip(RoundedCornerShape(10.dp))
+                    .background(Color.White)
+                    .clickable { zoomed = true }
+                    .testTag("plan_thumb_${step.id}"),
             )
+        } else {
+            Box(
+                Modifier.size(width = 76.dp, height = 52.dp),
+                contentAlignment = Alignment.Center,
+            ) {
+                Box(
+                    Modifier.size(36.dp).background(MaterialTheme.colorScheme.secondaryContainer, CircleShape),
+                    contentAlignment = Alignment.Center,
+                ) {
+                    Icon(
+                        stepIcon(step),
+                        contentDescription = null,
+                        tint = MaterialTheme.colorScheme.onSecondaryContainer,
+                        modifier = Modifier.size(20.dp),
+                    )
+                }
+            }
         }
+        if (zoomed && illustration != null) IllustrationZoomDialog(illustration) { zoomed = false }
         Column(Modifier.weight(1f)) {
             Text(step.title, style = MaterialTheme.typography.bodyLarge)
             planRowDose(step).takeIf { it.isNotEmpty() }?.let {
