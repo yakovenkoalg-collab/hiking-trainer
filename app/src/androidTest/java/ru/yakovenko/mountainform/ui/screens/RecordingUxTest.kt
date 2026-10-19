@@ -57,6 +57,23 @@ class RecordingUxTest {
         rule.runOnIdle { assertEquals(2, logged) }
     }
 
+    @Test fun garminPrefillCountsTheWorkoutWithoutTyping() {
+        var seconds = 0
+        var details: SessionCompletionDetails? = null
+        rule.setContent { MountainFormTheme {
+            RetrospectiveSessionDialog("test", WorkoutPlanCompiler.compile(steps), emptyList(), {}, { _, _, duration, metadata ->
+                seconds = duration; details = metadata
+            }, prefill = GarminPrefill(LocalDate.now().minusDays(1).toEpochDay(), 48), initialRpe = 3)
+        } }
+        rule.onNodeWithText("Засчитать по Garmin").assertIsDisplayed()
+        rule.onNodeWithTag("save_retrospective").assertIsEnabled().performClick()
+        rule.runOnIdle {
+            assertEquals(48 * 60, seconds)
+            assertEquals(LocalDate.now().minusDays(1).toEpochDay(), details?.performedEpochDay)
+            assertEquals(2, details?.retrospectiveLogs?.size)
+        }
+    }
+
     @Test fun overviewAndExecutionSupportLargeFont() {
         rule.setContent {
             CompositionLocalProvider(LocalDensity provides Density(LocalDensity.current.density, 1.5f)) {

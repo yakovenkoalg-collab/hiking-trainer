@@ -4,7 +4,7 @@ import kotlinx.serialization.Serializable
 
 @Serializable
 data class BackupEnvelope(
-    val schemaVersion: Int = 4,
+    val schemaVersion: Int = 5,
     val generatedAtEpochMillis: Long,
     val profile: UserProfileEntity,
     val goals: List<GoalEventEntity>,

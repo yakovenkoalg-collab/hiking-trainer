@@ -5,6 +5,7 @@ import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
 import ru.yakovenko.mountainform.domain.AgreedHybridPlan
 import ru.yakovenko.mountainform.domain.BaseOneBlock
+import ru.yakovenko.mountainform.domain.HeartRateHistogram
 import ru.yakovenko.mountainform.domain.HomeKettlebellWeekPlan
 import ru.yakovenko.mountainform.domain.HomeRunningBlock
 import ru.yakovenko.mountainform.domain.ProgressedHybridPlan
@@ -399,6 +400,7 @@ class MountainFormRepository(
                     averageStepLengthMm = it.averageStepLengthMm,
                     laps = decodeList(it.lapsJson),
                     linkedSessionId = it.linkedSessionId,
+                    heartRateSecondsByBpm = HeartRateHistogram.decode(it.heartRateHistogramJson),
                 )
             },
             checkpoint = checkpoint?.let { ReportCheckpoint(it.id, it.reason, checkpointSessionIds) },
@@ -468,7 +470,7 @@ class MountainFormRepository(
 
     suspend fun previewBackup(rawJson: String): BackupPreview {
         val backup = json.decodeFromString<BackupEnvelope>(rawJson)
-        require(backup.schemaVersion in 1..4) { "Неподдерживаемая версия резервной копии" }
+        require(backup.schemaVersion in 1..5) { "Неподдерживаемая версия резервной копии" }
         val existing = dao.getSessions().associateBy { it.id }
         return BackupPreview(
             backup = backup,
@@ -786,6 +788,10 @@ class MountainFormRepository(
                     averageGroundContactTimeMs = primary.averageGroundContactTimeMs ?: secondary.averageGroundContactTimeMs,
                     averageStepLengthMm = primary.averageStepLengthMm ?: secondary.averageStepLengthMm,
                     lapsJson = primary.lapsJson.takeUnless { it == "[]" } ?: secondary.lapsJson,
+                    heartRateHistogramJson = primary.heartRateHistogramJson.takeUnless { it == "{}" }
+                        ?: secondary.heartRateHistogramJson,
+                    // Earlier FIT imports could end at their start; the later of the two ends is the real one.
+                    endAtEpochMillis = maxOf(current.endAtEpochMillis, incoming.endAtEpochMillis),
                     rawFileName = primary.rawFileName ?: secondary.rawFileName,
                 )
             }

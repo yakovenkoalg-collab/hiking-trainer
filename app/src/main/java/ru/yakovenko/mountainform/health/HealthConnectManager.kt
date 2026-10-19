@@ -16,6 +16,7 @@ import androidx.health.connect.client.request.AggregateRequest
 import androidx.health.connect.client.time.TimeRangeFilter
 import ru.yakovenko.mountainform.data.ActivitySourceType
 import ru.yakovenko.mountainform.data.ImportedActivityEntity
+import ru.yakovenko.mountainform.domain.HeartRateHistogram
 import java.time.Duration
 import java.time.Instant
 import java.time.temporal.ChronoUnit
@@ -188,13 +189,42 @@ class HealthConnectManager(private val context: Context) {
                 elevationMeters = aggregate[ElevationGainedRecord.ELEVATION_GAINED_TOTAL]?.inMeters,
                 averageHeartRate = aggregate[HeartRateRecord.BPM_AVG]?.toDouble(),
                 maxHeartRate = aggregate[HeartRateRecord.BPM_MAX]?.toDouble(),
+                heartRateHistogramJson = HeartRateHistogram.encode(
+                    HeartRateHistogram.fromSamples(
+                        readHeartRateSamples(client, exercise),
+                        exercise.startTime.toEpochMilli(),
+                        exercise.endTime.toEpochMilli(),
+                    ),
+                ),
                 importedAtEpochMillis = now,
             )
         }
     }
 
+    /** Heart-rate samples of the activity from the app that recorded it; a missing series only loses the histogram. */
+    private suspend fun readHeartRateSamples(client: HealthConnectClient, exercise: ExerciseSessionRecord): List<Pair<Long, Int>> =
+        runCatching {
+            val samples = mutableListOf<Pair<Long, Int>>()
+            var pageToken: String? = null
+            do {
+                val response = client.readRecords(
+                    ReadRecordsRequest(
+                        recordType = HeartRateRecord::class,
+                        timeRangeFilter = TimeRangeFilter.between(exercise.startTime, exercise.endTime),
+                        dataOriginFilter = setOf(exercise.metadata.dataOrigin),
+                        pageToken = pageToken,
+                    ),
+                )
+                response.records.forEach { record ->
+                    record.samples.forEach { samples += it.time.toEpochMilli() to it.beatsPerMinute.toInt() }
+                }
+                pageToken = response.pageToken
+            } while (pageToken != null)
+            samples
+        }.getOrDefault(emptyList())
+
     private fun exerciseTypeLabel(type: Int): String = when (type) {
-        ExerciseSessionRecord.EXERCISE_TYPE_RUNNING -> "Бег"
+        ExerciseSessionRecord.EXERCISE_TYPE_RUNNING, ExerciseSessionRecord.EXERCISE_TYPE_RUNNING_TREADMILL -> "Бег"
         ExerciseSessionRecord.EXERCISE_TYPE_WALKING -> "Ходьба"
         ExerciseSessionRecord.EXERCISE_TYPE_HIKING -> "Поход"
         ExerciseSessionRecord.EXERCISE_TYPE_BIKING -> "Велосипед"

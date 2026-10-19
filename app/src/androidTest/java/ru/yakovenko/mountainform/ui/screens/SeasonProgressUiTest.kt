@@ -7,6 +7,7 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.test.assertIsDisplayed
+import androidx.compose.ui.test.assertIsEnabled
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithTag
@@ -162,5 +163,8 @@ class SeasonProgressUiTest {
         }
         composeRule.onNodeWithText("Пульс выше границы 148 · средний 161").performScrollTo().assertIsDisplayed()
         composeRule.onNodeWithText("Выше границы 7 из 8 кругов", substring = true).assertIsDisplayed()
+        composeRule.onNodeWithTag("complete_linked_session").performScrollTo().performClick()
+        composeRule.onNodeWithText("Засчитать по Garmin").assertIsDisplayed()
+        composeRule.onNodeWithTag("save_retrospective").assertIsEnabled()
     }
 }

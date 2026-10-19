@@ -8,12 +8,12 @@ import ru.yakovenko.mountainform.data.TrainingSessionEntity
 
 enum class HeartRateVerdict { WITHIN, PARTLY_ABOVE, ABOVE }
 
-enum class HeartRateBasis { LAPS, AVERAGE }
+enum class HeartRateBasis { SAMPLES, LAPS, AVERAGE }
 
 /**
  * How a recorded activity compares with a planned heart-rate ceiling.
- * The app stores lap and zone summaries, not every sample, so time above the ceiling is an estimate
- * by laps; [definiteSecondsAbove] is the part that is certain from the watch's own zones.
+ * With heart-rate samples the time above the ceiling is exact; without them it is estimated by laps,
+ * and [definiteSecondsAbove] is the part that is certain from the watch's own zones.
  */
 data class HeartRateCompliance(
     val targetMax: Int,
@@ -27,6 +27,8 @@ data class HeartRateCompliance(
     /** Laps at or below the ceiling that also have a distance: the basis for pace at easy heart rate. */
     val easyPaceSeconds: Long = 0,
     val easyPaceMeters: Double = 0.0,
+    /** Highest heart rate in the samples; null when the basis is not [HeartRateBasis.SAMPLES]. */
+    val peakHeartRate: Int? = null,
 ) {
     val easySeconds: Long get() = assessedSeconds - secondsAboveTarget
 
@@ -52,6 +54,10 @@ object HeartRateTarget {
     /** Shorter laps are stops and leftovers; their pace says little. */
     private const val MIN_PACE_LAP_METERS = 400.0
 
+    /** Fewer samples than this are a broken series rather than a record of the run. */
+    private const val MIN_SAMPLED_SECONDS = 300L
+    private const val EASY_WHOLE_RUN_SHARE = 0.10
+
     /** The ceiling of a session is the highest step ceiling: short efforts above it are planned separately. */
     fun sessionTarget(steps: List<ExerciseStep>): Int? = steps.mapNotNull { it.targetHeartRateMax }.maxOrNull()
 
@@ -69,6 +75,8 @@ object HeartRateTarget {
         targetMax = targetMax,
         averageHeartRate = activity.averageHeartRate,
         durationSeconds = activity.durationSeconds,
+        distanceMeters = activity.distanceMeters,
+        histogram = HeartRateHistogram.decode(activity.heartRateHistogramJson),
         laps = runCatching { json.decodeFromString<List<ActivityLapSummary>>(activity.lapsJson) }.getOrDefault(emptyList()),
         zoneHighBoundaries = runCatching { json.decodeFromString<List<Double>>(activity.heartRateZoneBoundariesJson) }
             .getOrDefault(emptyList()),
@@ -83,9 +91,33 @@ object HeartRateTarget {
         laps: List<ActivityLapSummary>,
         zoneHighBoundaries: List<Double> = emptyList(),
         zoneSeconds: List<Double> = emptyList(),
+        distanceMeters: Double? = null,
+        histogram: Map<Int, Int> = emptyMap(),
     ): HeartRateCompliance? {
         val definite = definiteSecondsAbove(targetMax, zoneHighBoundaries, zoneSeconds)
         val measuredLaps = laps.filter { it.averageHeartRate != null && it.durationSeconds > 0 }
+        val sampledSeconds = histogram.values.sumOf { it.toLong() }
+        if (sampledSeconds >= MIN_SAMPLED_SECONDS) {
+            val above = histogram.filterKeys { it > targetMax }.values.sumOf { it.toLong() }
+            val easyLaps = measuredLaps.filter { requireNotNull(it.averageHeartRate) <= targetMax }
+                .filter { (it.distanceMeters ?: 0.0) >= MIN_PACE_LAP_METERS }
+            // Without laps the whole run counts for easy pace only when it stayed almost entirely under the ceiling.
+            val wholeRunIsEasy = easyLaps.isEmpty() && measuredLaps.isEmpty() &&
+                above <= sampledSeconds * EASY_WHOLE_RUN_SHARE && (distanceMeters ?: 0.0) >= MIN_PACE_LAP_METERS
+            return HeartRateCompliance(
+                targetMax = targetMax,
+                averageHeartRate = averageHeartRate,
+                basis = HeartRateBasis.SAMPLES,
+                assessedSeconds = sampledSeconds,
+                secondsAboveTarget = above,
+                lapsAboveTarget = measuredLaps.count { requireNotNull(it.averageHeartRate) > targetMax },
+                lapsAssessed = measuredLaps.size,
+                definiteSecondsAbove = null,
+                easyPaceSeconds = if (wholeRunIsEasy) durationSeconds else easyLaps.sumOf { it.durationSeconds },
+                easyPaceMeters = if (wholeRunIsEasy) requireNotNull(distanceMeters) else easyLaps.sumOf { requireNotNull(it.distanceMeters) },
+                peakHeartRate = histogram.keys.maxOrNull(),
+            )
+        }
         if (measuredLaps.isNotEmpty()) {
             val above = measuredLaps.filter { requireNotNull(it.averageHeartRate) > targetMax }
             val easyWithDistance = (measuredLaps - above.toSet()).filter { (it.distanceMeters ?: 0.0) >= MIN_PACE_LAP_METERS }

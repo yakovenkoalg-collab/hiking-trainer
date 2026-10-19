@@ -38,6 +38,11 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import kotlinx.serialization.json.Json
 import ru.yakovenko.mountainform.data.ActivityLinkStatus
+import androidx.compose.ui.platform.testTag
+import ru.yakovenko.mountainform.domain.WorkoutPlanCompiler
+import ru.yakovenko.mountainform.domain.SessionCompletionDetails
+import ru.yakovenko.mountainform.data.ExerciseStep
+import ru.yakovenko.mountainform.data.SessionSetLogEntity
 import ru.yakovenko.mountainform.data.ActivityLapSummary
 import ru.yakovenko.mountainform.data.ImportedActivityEntity
 import ru.yakovenko.mountainform.data.SessionStatus
@@ -68,8 +73,11 @@ fun ActivitiesScreen(
     onIgnoreActivity: (String) -> Unit,
     onRestoreActivity: (String) -> Unit,
     onHeartRateSource: (String, String) -> Unit = { _, _ -> },
+    setLogs: List<SessionSetLogEntity> = emptyList(),
+    onCompleteSession: (String, Int, String, Int, SessionCompletionDetails) -> Unit = { _, _, _, _, _ -> },
 ) {
     var linkingActivity by remember { mutableStateOf<ImportedActivityEntity?>(null) }
+    var completingSession by remember { mutableStateOf<TrainingSessionEntity?>(null) }
     var showSources by remember { mutableStateOf(false) }
     val visibleActivities = remember(activities, healthSummary.windowDays) {
         activitiesWithinWindow(activities, healthSummary.windowDays)
@@ -205,10 +213,33 @@ fun ActivitiesScreen(
                         onIgnore = { onIgnoreActivity(activity.id) },
                         onRestore = { onRestoreActivity(activity.id) },
                         onHeartRateSource = { onHeartRateSource(activity.id, it) },
+                        onComplete = sessions.firstOrNull { it.id == activity.linkedSessionId }
+                            ?.takeIf { it.status == SessionStatus.PLANNED }
+                            ?.let { session -> { completingSession = session } },
                     )
                 }
             }
         }
+    }
+
+    completingSession?.let { session ->
+        val targets = remember(session.stepsJson) {
+            WorkoutPlanCompiler.compile(
+                runCatching { lenientJson.decodeFromString<List<ExerciseStep>>(session.stepsJson) }.getOrDefault(emptyList()),
+            )
+        }
+        RetrospectiveSessionDialog(
+            sessionId = session.id,
+            targets = targets,
+            existingLogs = setLogs.filter { it.sessionId == session.id },
+            onDismiss = { completingSession = null },
+            onConfirm = { rpe, notes, seconds, details ->
+                onCompleteSession(session.id, rpe, notes, seconds, details)
+                completingSession = null
+            },
+            prefill = garminPrefill(activities.filter { it.linkedSessionId == session.id }),
+            initialRpe = session.targetRpe,
+        )
     }
 
     linkingActivity?.let { activity ->
@@ -292,6 +323,7 @@ private fun ActivityCard(
     onIgnore: () -> Unit,
     onRestore: () -> Unit,
     onHeartRateSource: (String) -> Unit,
+    onComplete: (() -> Unit)? = null,
 ) {
     var detailsVisible by remember(activity.id) { mutableStateOf(false) }
     var choosingSensor by remember(activity.id) { mutableStateOf(false) }
@@ -365,6 +397,11 @@ private fun ActivityCard(
                         modifier = Modifier.weight(1f),
                     )
                     TextButton(onClick = onUnlink) { Text("Убрать") }
+                }
+                onComplete?.let {
+                    Button(onClick = it, modifier = Modifier.fillMaxWidth().testTag("complete_linked_session")) {
+                        Text("Засчитать тренировку")
+                    }
                 }
             } else if (activity.status != ActivityLinkStatus.IGNORED) {
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -584,3 +621,5 @@ private inline fun <reified T> decodeMetricList(rawJson: String): List<T> =
     runCatching { Json.decodeFromString<List<T>>(rawJson) }.getOrDefault(emptyList())
 
 private const val LINK_WINDOW_DAYS = 7L
+
+private val lenientJson = Json { ignoreUnknownKeys = true }

@@ -61,6 +61,11 @@ internal fun heartRateComplianceText(compliance: HeartRateCompliance): HeartRate
         HeartRateVerdict.ABOVE -> "Пульс выше границы ${compliance.targetMax}"
     } + average?.let { " · $it" }.orEmpty()
     val detail = when (compliance.basis) {
+        HeartRateBasis.SAMPLES -> buildString {
+            append("Выше границы ${minutes(compliance.secondsAboveTarget)} из ${minutes(compliance.assessedSeconds)} мин")
+            compliance.peakHeartRate?.let { append(" · пик $it") }
+            append(" · по пульсу каждую секунду")
+        }
         HeartRateBasis.LAPS -> buildString {
             append("Выше границы ${compliance.lapsAboveTarget} из ${compliance.lapsAssessed} кругов")
             append(" · около ${minutes(compliance.secondsAboveTarget)} из ${minutes(compliance.assessedSeconds)} мин")

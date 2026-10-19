@@ -256,6 +256,8 @@ data class ImportedActivityEntity(
     val importedAtEpochMillis: Long,
     val rawFileName: String? = null,
     @ColumnInfo(defaultValue = "'UNKNOWN'") val heartRateSource: String = "UNKNOWN",
+    /** Seconds spent at each heart rate, beats per minute → seconds, from the record's samples. Empty when unknown. */
+    @ColumnInfo(defaultValue = "'{}'") val heartRateHistogramJson: String = "{}",
 )
 
 @Serializable
@@ -343,7 +345,7 @@ data class PlanSession(
 
 @Serializable
 data class ReportEnvelope(
-    val schemaVersion: Int = 7,
+    val schemaVersion: Int = 8,
     val generatedAtEpochMillis: Long,
     val periodStartEpochDay: Long,
     val periodEndEpochDay: Long,
@@ -466,6 +468,8 @@ data class ReportActivity(
     val averageStepLengthMm: Double? = null,
     val laps: List<ActivityLapSummary> = emptyList(),
     val linkedSessionId: String? = null,
+    /** Seconds at each heart rate, beats per minute → seconds. */
+    val heartRateSecondsByBpm: Map<Int, Int> = emptyMap(),
 )
 
 @Serializable

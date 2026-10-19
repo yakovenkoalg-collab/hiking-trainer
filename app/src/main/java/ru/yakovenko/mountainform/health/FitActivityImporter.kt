@@ -8,6 +8,8 @@ import com.garmin.fit.LapMesg
 import com.garmin.fit.LapMesgListener
 import com.garmin.fit.MesgBroadcaster
 import com.garmin.fit.MesgNum
+import com.garmin.fit.RecordMesg
+import com.garmin.fit.RecordMesgListener
 import com.garmin.fit.SessionMesg
 import com.garmin.fit.SessionMesgListener
 import com.garmin.fit.Sport
@@ -18,6 +20,7 @@ import kotlinx.serialization.json.Json
 import ru.yakovenko.mountainform.data.ActivitySourceType
 import ru.yakovenko.mountainform.data.ActivityLapSummary
 import ru.yakovenko.mountainform.data.ImportedActivityEntity
+import ru.yakovenko.mountainform.domain.HeartRateHistogram
 import java.io.ByteArrayInputStream
 import java.io.ByteArrayOutputStream
 import java.io.InputStream
@@ -42,7 +45,14 @@ class FitActivityImporter(private val context: Context) {
         val sessions = mutableListOf<SessionMesg>()
         val laps = mutableListOf<LapMesg>()
         val timeInZones = mutableListOf<TimeInZoneMesg>()
+        val heartRateSamples = mutableListOf<Pair<Long, Int>>()
         val broadcaster = MesgBroadcaster(Decode())
+        broadcaster.addListener(RecordMesgListener { mesg ->
+            val record = RecordMesg(mesg)
+            val time = record.timestamp?.instant?.toEpochMilli()
+            val bpm = record.heartRate?.toInt()
+            if (time != null && bpm != null) heartRateSamples += time to bpm
+        })
         broadcaster.addListener(SessionMesgListener { sessions += SessionMesg(it) })
         broadcaster.addListener(LapMesgListener { laps += LapMesg(it) })
         broadcaster.addListener(TimeInZoneMesgListener { timeInZones += TimeInZoneMesg(it) })
@@ -55,7 +65,11 @@ class FitActivityImporter(private val context: Context) {
             val start = session.startTime?.instant
                 ?: session.timestamp?.instant?.minusSeconds(durationSeconds)
                 ?: error("В FIT-файле нет времени тренировки")
-            val end = session.timestamp?.instant ?: start.plusSeconds(durationSeconds)
+            val end = activityEnd(
+                start,
+                session.timestamp?.instant,
+                (session.totalElapsedTime ?: session.totalTimerTime ?: 0f).toLong(),
+            )
             val sourceId = sha256("$fileName|${start.toEpochMilli()}|$index|${session.sport}")
             val zoneDetails = timeInZones.firstOrNull {
                 it.referenceMesg == MesgNum.SESSION && it.referenceIndex == session.messageIndex
@@ -116,6 +130,9 @@ class FitActivityImporter(private val context: Context) {
                 averageGroundContactTimeMs = session.avgStanceTime?.toDouble(),
                 averageStepLengthMm = session.avgStepLength?.toDouble(),
                 lapsJson = json.encodeToString(sessionLaps),
+                heartRateHistogramJson = HeartRateHistogram.encode(
+                    HeartRateHistogram.fromSamples(heartRateSamples, start.toEpochMilli(), end.toEpochMilli()),
+                ),
                 importedAtEpochMillis = now,
                 rawFileName = fileName,
             )
@@ -183,6 +200,10 @@ class FitActivityImporter(private val context: Context) {
             }
             return output.toByteArray()
         }
+
+        /** Garmin may stamp the session summary with its start time; the activity still ends after its elapsed time. */
+        internal fun activityEnd(start: java.time.Instant, summaryStamp: java.time.Instant?, elapsedSeconds: Long): java.time.Instant =
+            listOfNotNull(summaryStamp, start.plusSeconds(elapsedSeconds)).max()
 
         internal fun actualCadence(
             runningCadence: Short?,

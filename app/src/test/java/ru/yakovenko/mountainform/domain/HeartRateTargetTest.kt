@@ -79,6 +79,40 @@ class HeartRateTargetTest {
     }
 
     @Test
+    fun samplesGiveExactMinutesAboveTheCeilingAndOutrankLaps() {
+        val histogram = mapOf(140 to 600, 146 to 1_200, 149 to 360, 155 to 180)
+        val compliance = requireNotNull(
+            HeartRateTarget.compliance(
+                targetMax = 148, averageHeartRate = 147.0, durationSeconds = 2_400, distanceMeters = 6_000.0,
+                laps = listOf(lap(1, 1_200, 150.0), lap(2, 1_200, 145.0)), histogram = histogram,
+            ),
+        )
+        assertEquals(HeartRateBasis.SAMPLES, compliance.basis)
+        assertEquals(2_340, compliance.assessedSeconds)
+        assertEquals(540, compliance.secondsAboveTarget)
+        assertEquals(155, compliance.peakHeartRate)
+        assertEquals(1, compliance.lapsAboveTarget)
+        assertEquals(HeartRateVerdict.PARTLY_ABOVE, compliance.verdict)
+    }
+
+    @Test
+    fun withoutLapsAWholeEasyRunCountsForEasyPaceButAHardOneDoesNot() {
+        val easy = requireNotNull(HeartRateTarget.compliance(148, 143.0, 2_400, emptyList(), distanceMeters = 6_000.0,
+            histogram = mapOf(143 to 2_300, 150 to 100)))
+        assertEquals(2_400, easy.easyPaceSeconds)
+        assertEquals(6_000.0, easy.easyPaceMeters, 0.01)
+        val hard = requireNotNull(HeartRateTarget.compliance(148, 150.0, 2_400, emptyList(), distanceMeters = 6_000.0,
+            histogram = mapOf(143 to 1_400, 152 to 1_000)))
+        assertEquals(0, hard.easyPaceSeconds)
+    }
+
+    @Test
+    fun aBrokenShortSeriesFallsBackToTheAverage() {
+        val compliance = requireNotNull(HeartRateTarget.compliance(148, 150.0, 2_400, emptyList(), histogram = mapOf(150 to 60)))
+        assertEquals(HeartRateBasis.AVERAGE, compliance.basis)
+    }
+
+    @Test
     fun verdictSeparatesWithinPartlyAndAbove() {
         fun verdict(vararg heartRates: Double) = requireNotNull(
             HeartRateTarget.compliance(148, null, 0, heartRates.mapIndexed { index, rate -> lap(index + 1, 300, rate) }),

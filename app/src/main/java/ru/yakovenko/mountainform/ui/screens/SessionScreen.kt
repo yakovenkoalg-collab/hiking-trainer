@@ -174,6 +174,7 @@ fun SessionScreen(
     var clockEpochMillis by remember { mutableLongStateOf(System.currentTimeMillis()) }
     var showCompletion by remember { mutableStateOf(false) }
     var showRetrospective by remember { mutableStateOf(false) }
+    var retrospectivePrefill by remember { mutableStateOf<GarminPrefill?>(null) }
     var showSkip by remember { mutableStateOf(false) }
     var showSkipStage by remember { mutableStateOf(false) }
     var showPainStop by remember { mutableStateOf(false) }
@@ -587,7 +588,11 @@ fun SessionScreen(
                         )
                     }
                     if (!allTargetsCompleted) TextButton(
-                        onClick = { pauseWorkoutForSafety(); showRetrospective = true },
+                        onClick = {
+                            pauseWorkoutForSafety()
+                            retrospectivePrefill = garminPrefill(linkedActivities)
+                            showRetrospective = true
+                        },
                         enabled = !emptyPlan,
                         modifier = Modifier.fillMaxWidth().testTag("record_completed_workout"),
                     ) { Text("Уже выполнил") }
@@ -747,6 +752,13 @@ fun SessionScreen(
                             garminSelection = linkedActivities.mapTo(mutableSetOf()) { it.id }
                             showGarminPicker = true
                         },
+                        onComplete = if (session.status == SessionStatus.PLANNED && linkedActivities.isNotEmpty() && !emptyPlan) {
+                            {
+                                pauseWorkoutForSafety()
+                                retrospectivePrefill = garminPrefill(linkedActivities)
+                                showRetrospective = true
+                            }
+                        } else null,
                     )
                 }
             }
@@ -988,6 +1000,8 @@ fun SessionScreen(
         session.id, targets, sessionSetLogs,
         onDismiss = { showRetrospective = false },
         onConfirm = { rpe, notes, seconds, metadata -> onCompleteDetailed(session.id, rpe, notes, seconds, metadata) },
+        prefill = retrospectivePrefill,
+        initialRpe = session.targetRpe,
     )
     if (showStaleTimerWarning) {
         AlertDialog(
@@ -1011,6 +1025,13 @@ fun SessionScreen(
             onConfirm = {
                 onReplaceSessionActivities(session.id, garminSelection.toList())
                 showGarminPicker = false
+                // Linking the record of a planned workout is the moment to count it: offer it right away.
+                val linked = garminCandidates.filter { it.id in garminSelection }
+                if (session.status == SessionStatus.PLANNED && linked.isNotEmpty() && !emptyPlan) {
+                    pauseWorkoutForSafety()
+                    retrospectivePrefill = garminPrefill(linked)
+                    showRetrospective = true
+                }
             },
         )
     }
@@ -1304,6 +1325,7 @@ private fun restPhaseTitle(source: WorkoutSetTarget?, next: WorkoutSetTarget): S
 private fun SessionGarminCard(
     linkedActivities: List<ImportedActivityEntity>,
     onManage: () -> Unit,
+    onComplete: (() -> Unit)? = null,
 ) {
     val groups = remember(linkedActivities) { linkedGarminGroups(linkedActivities) }
     Card {
@@ -1343,6 +1365,11 @@ private fun SessionGarminCard(
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                         )
                     }
+                }
+            }
+            onComplete?.let {
+                Button(onClick = it, modifier = Modifier.fillMaxWidth().testTag("complete_from_garmin")) {
+                    Text("Засчитать по Garmin")
                 }
             }
         }

@@ -40,6 +40,31 @@ class SeasonProgressTest {
     }
 
     @Test
+    fun exactComplianceTextNamesMinutesAndPeak() {
+        val text = heartRateComplianceText(requireNotNull(HeartRateTarget.compliance(
+            148, 149.0, 2_860, emptyList(), histogram = mapOf(142 to 1_300, 147 to 1_000, 151 to 400, 159 to 140),
+        )))
+        assertEquals("Пульс местами выше границы 148 · средний 149", text.headline)
+        assertEquals("Выше границы 9 из 47 мин · пик 159 · по пульсу каждую секунду", text.detail)
+    }
+
+    @Test
+    fun garminPrefillTakesTheDayOfTheFirstRecordAndTheTotalTime() {
+        fun run(start: Long, seconds: Long) = ru.yakovenko.mountainform.data.ImportedActivityEntity(
+            id = "a$start", sourceRecordId = "a$start", sourceType = "FIT", sourcePackage = "test", title = "Бег",
+            activityType = "RUNNING", startAtEpochMillis = start, endAtEpochMillis = start + seconds * 1000,
+            durationSeconds = seconds, importedAtEpochMillis = start,
+        )
+        val zone = java.time.ZoneOffset.UTC
+        val morning = java.time.LocalDate.of(2026, 10, 18).atTime(9, 19).toInstant(zone).toEpochMilli()
+        assertEquals(
+            GarminPrefill(java.time.LocalDate.of(2026, 10, 18).toEpochDay(), 49),
+            garminPrefill(listOf(run(morning + 3_000_000, 50), run(morning, 2_860)), zone),
+        )
+        assertNull(garminPrefill(emptyList(), zone))
+    }
+
+    @Test
     fun easyShareCoversOnlyTheLatestFourWeeksWithHeartRate() {
         fun week(assessed: Long, easy: Long) = RunningWeek(0, 1, 5_000.0, 1_800, assessed, easy)
         assertNull(recentEasySharePercent(listOf(week(0, 0), week(0, 0))))

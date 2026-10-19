@@ -13,6 +13,7 @@ import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Dialog
+import ru.yakovenko.mountainform.data.ImportedActivityEntity
 import ru.yakovenko.mountainform.data.SessionSetLogEntity
 import ru.yakovenko.mountainform.domain.*
 import java.time.LocalDate
@@ -20,6 +21,20 @@ import java.time.format.DateTimeFormatter
 import java.time.format.ResolverStyle
 
 internal val recordingDateFormat: DateTimeFormatter = DateTimeFormatter.ofPattern("dd.MM.uuuu").withResolverStyle(ResolverStyle.STRICT)
+/** Date and duration of a workout taken from its linked Garmin records. */
+internal data class GarminPrefill(val epochDay: Long, val minutes: Int)
+
+internal fun garminPrefill(
+    activities: List<ImportedActivityEntity>,
+    zone: java.time.ZoneId = java.time.ZoneId.systemDefault(),
+): GarminPrefill? {
+    val first = activities.minByOrNull { it.startAtEpochMillis } ?: return null
+    val seconds = activities.sumOf { it.durationSeconds.coerceAtLeast(0) }
+    if (seconds <= 0) return null
+    val day = java.time.Instant.ofEpochMilli(first.startAtEpochMillis).atZone(zone).toLocalDate()
+    return GarminPrefill(day.toEpochDay(), ((seconds + 30) / 60).toInt().coerceIn(1, 720))
+}
+
 internal fun parseRecordingDay(text: String): Long? = runCatching {
     LocalDate.parse(text, recordingDateFormat).takeIf { !it.isAfter(LocalDate.now()) && it.year >= 2000 }?.toEpochDay()
 }.getOrNull()
@@ -42,21 +57,34 @@ internal fun RetrospectiveSessionDialog(
     existingLogs: List<SessionSetLogEntity>,
     onDismiss: () -> Unit,
     onConfirm: (Int, String, Int, SessionCompletionDetails) -> Unit,
+    prefill: GarminPrefill? = null,
+    initialRpe: Int = 3,
 ) {
-    var selected by remember { mutableStateOf(emptySet<Int>()) }
-    var date by rememberSaveable { mutableStateOf(LocalDate.now().format(recordingDateFormat)) }
-    var duration by rememberSaveable { mutableStateOf("") }
-    var rpe by rememberSaveable { mutableFloatStateOf(3f) }
-    var notes by rememberSaveable { mutableStateOf("") }
-    val minutes = duration.toIntOrNull()?.takeIf { it in 1..720 }
-    val day = parseRecordingDay(date)
     fun isRecorded(target: WorkoutSetTarget) = existingLogs.any {
         it.stepId == target.step.id && it.roundIndex == target.roundIndex && it.setIndex == target.setIndex && it.completed
     }
+    var selected by remember {
+        mutableStateOf(if (prefill != null) targets.indices.filterNot { isRecorded(targets[it]) }.toSet() else emptySet())
+    }
+    var date by rememberSaveable {
+        mutableStateOf((prefill?.let { LocalDate.ofEpochDay(it.epochDay) } ?: LocalDate.now()).format(recordingDateFormat))
+    }
+    var duration by rememberSaveable { mutableStateOf(prefill?.minutes?.toString().orEmpty()) }
+    var rpe by rememberSaveable { mutableFloatStateOf(initialRpe.coerceIn(1, 10).toFloat()) }
+    var notes by rememberSaveable { mutableStateOf("") }
+    val minutes = duration.toIntOrNull()?.takeIf { it in 1..720 }
+    val day = parseRecordingDay(date)
     Dialog(onDismissRequest = onDismiss) {
         Surface(shape = MaterialTheme.shapes.extraLarge) {
             Column(Modifier.padding(20.dp)) {
-                Text("Уже выполнил", style = MaterialTheme.typography.titleLarge)
+                Text(if (prefill != null) "Засчитать по Garmin" else "Уже выполнил", style = MaterialTheme.typography.titleLarge)
+                if (prefill != null) {
+                    Text(
+                        "Дата, время и этапы заполнены по записи Garmin — проверьте и оцените нагрузку.",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
                 LazyColumn(Modifier.weight(1f, fill = false).testTag("retrospective_content"), verticalArrangement = Arrangement.spacedBy(10.dp)) {
                     item { RecordingDateField(date) { date = it } }
                     item {

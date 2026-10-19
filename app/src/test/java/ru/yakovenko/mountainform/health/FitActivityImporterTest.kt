@@ -51,4 +51,12 @@ class FitActivityImporterTest {
         assertEquals("record.fit", entries.single().first)
         assertArrayEquals(fitBytes, entries.single().second)
     }
+
+    @Test
+    fun activityEndsAfterItsElapsedTimeEvenWhenTheSummaryIsStampedAtTheStart() {
+        val start = java.time.Instant.parse("2026-09-06T17:18:04Z")
+        assertEquals(start.plusSeconds(3_573), FitActivityImporter.activityEnd(start, start, 3_573))
+        assertEquals(start.plusSeconds(4_000), FitActivityImporter.activityEnd(start, start.plusSeconds(4_000), 3_573))
+        assertEquals(start.plusSeconds(3_573), FitActivityImporter.activityEnd(start, null, 3_573))
+    }
 }

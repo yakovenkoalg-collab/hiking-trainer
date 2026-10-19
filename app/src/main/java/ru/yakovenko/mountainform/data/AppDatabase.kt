@@ -432,7 +432,7 @@ interface MountainFormDao {
         ReviewCheckpointEntity::class,
         ImportedActivityEntity::class,
     ],
-    version = 7,
+    version = 8,
     exportSchema = true,
 )
 abstract class MountainFormDatabase : RoomDatabase() {
@@ -632,11 +632,18 @@ abstract class MountainFormDatabase : RoomDatabase() {
             }
         }
 
+        val MIGRATION_7_8 = object : Migration(7, 8) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                // Existing records stay as they are; the histogram fills in on the next import of the same activity.
+                db.execSQL("ALTER TABLE imported_activities ADD COLUMN heartRateHistogramJson TEXT NOT NULL DEFAULT '{}'")
+            }
+        }
+
         fun create(context: Context): MountainFormDatabase =
             Room.databaseBuilder(
                 context.applicationContext,
                 MountainFormDatabase::class.java,
                 "mountain-form.db",
-            ).addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7).build()
+            ).addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7, MIGRATION_7_8).build()
     }
 }

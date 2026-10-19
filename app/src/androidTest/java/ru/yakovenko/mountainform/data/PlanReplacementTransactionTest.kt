@@ -1,6 +1,7 @@
 package ru.yakovenko.mountainform.data
 
 import ru.yakovenko.mountainform.domain.BaseOneBlock
+import ru.yakovenko.mountainform.domain.HeartRateHistogram
 import ru.yakovenko.mountainform.domain.HeartRateTarget
 import androidx.room.Room
 import androidx.test.platform.app.InstrumentationRegistry
@@ -350,6 +351,26 @@ class PlanReplacementTransactionTest {
     }
 
     @Test
+    fun reimportAddsTheHeartRateHistogramWithoutLosingTheLink() = runBlocking {
+        dao.upsertProfile(profile())
+        val run = session("easy-run", SessionStatus.PLANNED)
+        dao.upsertSessions(listOf(run))
+        val repository = MountainFormRepository(dao)
+        val first = activity("hc-run").copy(sourceType = ActivitySourceType.HEALTH_CONNECT, durationSeconds = 2_400,
+            startAtEpochMillis = 1_000_000, endAtEpochMillis = 3_400_000)
+        repository.upsertImportedActivities(listOf(first))
+        repository.linkActivity(first.id, run.id)
+        repository.upsertImportedActivities(listOf(first.copy(heartRateHistogramJson = "{\"145\":2000,\"152\":400}")))
+        val stored = requireNotNull(dao.getImportedActivity(first.id))
+        assertEquals(run.id, stored.linkedSessionId)
+        assertEquals(ActivityLinkStatus.LINKED, stored.status)
+        assertEquals(mapOf(145 to 2000, 152 to 400), HeartRateHistogram.decode(stored.heartRateHistogramJson))
+        repository.upsertImportedActivities(listOf(first))
+        assertEquals(mapOf(145 to 2000, 152 to 400),
+            HeartRateHistogram.decode(requireNotNull(dao.getImportedActivity(first.id)).heartRateHistogramJson))
+    }
+
+    @Test
     fun expiredTaperOrNewerExternalPlanNeverFallsBackToOldGeneration() = runBlocking {
         dao.upsertProfile(profile())
         val repository = MountainFormRepository(dao)
@@ -448,7 +469,7 @@ class PlanReplacementTransactionTest {
 
         val report = Json.decodeFromString<ReportEnvelope>(MountainFormRepository(dao).exportReport(today))
 
-        assertEquals(7, report.schemaVersion)
+        assertEquals(8, report.schemaVersion)
         assertEquals("SUSPECT", report.sessions.single().durationStatus)
         assertEquals("short-duration", report.sessions.single().id)
         assertEquals("upcoming", report.upcomingSessions.single().id)

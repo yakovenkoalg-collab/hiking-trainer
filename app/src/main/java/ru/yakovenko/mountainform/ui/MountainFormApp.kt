@@ -217,6 +217,10 @@ fun MountainFormApp(
                     onIgnoreActivity = viewModel::ignoreActivity,
                     onRestoreActivity = viewModel::restoreActivity,
                     onHeartRateSource = viewModel::setHeartRateSource,
+                    setLogs = state.setLogs,
+                    onCompleteSession = { sessionId, rpe, notes, seconds, details ->
+                        viewModel.completeSession(sessionId, rpe, notes, seconds, details)
+                    },
                 )
             }
             composable("sync-settings") {
