@@ -149,6 +149,35 @@ class SeasonProgressUiTest {
     }
 
     @Test
+    fun finishedWorkoutShowsWhatWasDone() {
+        val planned = BaseOneBlock.sessions().first { it.type == "STRENGTH" && it.durationMinutes == 60 }
+        val session = TrainingSessionEntity(
+            id = planned.id, plannedEpochDay = today.toEpochDay(), title = planned.title, type = planned.type,
+            phase = planned.phase, objective = planned.objective, durationMinutes = planned.durationMinutes,
+            targetRpe = planned.targetRpe, stepsJson = Json.encodeToString(planned.steps), status = "COMPLETED",
+            completedAtEpochMillis = 1, actualRpe = 3, actualDurationSeconds = 1_800, performedEpochDay = today.toEpochDay(),
+        )
+        val logs = (1..3).map { ru.yakovenko.mountainform.data.SessionSetLogEntity(planned.id, "hinge", 1, it, 10, 10, 16.0, completed = true) }
+        composeRule.setContent {
+            MountainFormTheme {
+                SessionScreen(
+                    padding = androidx.compose.foundation.layout.PaddingValues(), session = session, steps = planned.steps,
+                    catalog = emptyList(), stepLogs = emptyList(), setLogs = logs, shoulderRestrictionActive = false,
+                    loadBlocked = false, adaptationRequired = false, readinessRecommendation = "",
+                    readinessReasons = emptyList(), initialExecutionState = null, onExecutionStateChanged = {},
+                    onStepCompleted = { _, _, _ -> }, onSaveSetLog = {}, onBack = {}, onEditReadiness = {},
+                    onComplete = { _, _, _, _ -> }, onSkip = { _, _ -> },
+                )
+            }
+        }
+        composeRule.onNodeWithText("Выполнено").assertIsDisplayed()
+        composeRule.onNodeWithText("30 мин").assertIsDisplayed()
+        composeRule.onNodeWithText("RPE 3").assertIsDisplayed()
+        composeRule.onNodeWithText("Что сделано").performScrollTo().assertIsDisplayed()
+        composeRule.onNodeWithText("3 из 3 · по 10 · 16 кг", useUnmergedTree = true).performScrollTo().assertIsDisplayed()
+    }
+
+    @Test
     fun linkedRunShowsHowItComparesWithThePlannedCeiling() {
         val session = easySession(today)
         val activity = run("too-fast", today, listOf(147.0, 159.0, 161.0, 160.0, 166.0, 163.0, 165.0, 169.0), 360, linked = session.id)

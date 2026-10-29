@@ -34,6 +34,8 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.Saver
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -60,8 +62,9 @@ fun CalendarScreen(
     onProposeNextBlock: () -> Unit,
     agreedPlanAvailable: Boolean = false,
 ) {
-    var selectedMonth by remember { mutableStateOf(YearMonth.now()) }
-    var selectedDate by remember { mutableStateOf(LocalDate.now()) }
+    // Saved with the screen, so opening a workout and coming back keeps the month and day the user picked.
+    var selectedMonth by rememberSaveable(stateSaver = YearMonthSaver) { mutableStateOf(YearMonth.now()) }
+    var selectedDate by rememberSaveable(stateSaver = LocalDateSaver) { mutableStateOf(LocalDate.now()) }
     var sessionToMove by remember { mutableStateOf<TrainingSessionEntity?>(null) }
     val sessionsByDay = state.sessions.groupBy { it.plannedEpochDay }
     val selectedSessions = sessionsByDay[selectedDate.toEpochDay()].orEmpty()
@@ -420,3 +423,6 @@ internal fun statusCount(count: Int, one: String, few: String, many: String): St
 
 private fun trainingCount(count: Int, one: String, few: String, many: String): String =
     statusCount(count, "$one тренировка", "$few тренировки", "$many тренировок")
+
+private val YearMonthSaver = Saver<YearMonth, String>(save = { it.toString() }, restore = { YearMonth.parse(it) })
+private val LocalDateSaver = Saver<LocalDate, Long>(save = { it.toEpochDay() }, restore = { LocalDate.ofEpochDay(it) })

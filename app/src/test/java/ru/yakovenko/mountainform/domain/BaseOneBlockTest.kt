@@ -54,7 +54,11 @@ class BaseOneBlockTest {
     fun everyEasyRunCarriesTheCeilingAndNothingElseDoes() {
         sessions.forEach { session ->
             session.steps.forEach { step ->
-                val expected = if (step.exerciseId == "run-walk") BaseOneBlock.EASY_HEART_RATE_MAX else null
+                val expected = when {
+                    step.id == "calm-start" -> BaseOneBlock.CALM_START_HEART_RATE_MAX
+                    step.exerciseId == "run-walk" -> BaseOneBlock.EASY_HEART_RATE_MAX
+                    else -> null
+                }
                 assertEquals("${session.id}/${step.id}", expected, step.targetHeartRateMax)
             }
             val expectedSessionCeiling = if (session.type == "RUN") BaseOneBlock.EASY_HEART_RATE_MAX else null
@@ -80,8 +84,9 @@ class BaseOneBlockTest {
         sessions.forEach { session ->
             assertTrue(session.steps.none { ShoulderSafety.conflicts(it, ShoulderLoadPhase.FULL) })
             val restricted = session.steps.filter { ShoulderSafety.conflicts(it, ShoulderLoadPhase.RESTRICTED) }.map { it.id }
-            val expected = if (session.type == "STRENGTH") listOf("hinge", "pull-up", "push-up", "forearm-plank") else emptyList()
-            assertEquals(session.id, expected, restricted)
+            val tagged = session.steps.filter { it.restrictionTags.isNotEmpty() }.map { it.id }
+            assertEquals(session.id, tagged, restricted)
+            if (session.type == "STRENGTH") assertTrue(session.id, "pull-up" in tagged && "push-up" in tagged)
         }
     }
 
@@ -99,7 +104,7 @@ class BaseOneBlockTest {
             assertTrue(kept.steps.none { ShoulderSafety.conflicts(it, ShoulderLoadPhase.RESTRICTED) })
             if (full.type == "RUN") assertEquals(full, kept)
             else assertEquals(
-                listOf("warmup", "split-squat", "step-down", "calf", "bridge", "core", "cooldown"),
+                full.steps.filter { it.restrictionTags.isEmpty() }.map { it.id },
                 kept.steps.map { it.id },
             )
         }
@@ -120,9 +125,32 @@ class BaseOneBlockTest {
         assertEquals(plan.planId, later.planId)
         assertEquals(12, later.sessions.size)
         assertTrue(later.sessions.all { it.plannedEpochDay >= requireNotNull(later.replacePlannedFromEpochDay) })
-        assertNull(json.decodeFromString<PlanEnvelope>(encoded).sessions.first().steps.first().targetHeartRateMax)
+        assertEquals(BaseOneBlock.CALM_START_HEART_RATE_MAX,
+            json.decodeFromString<PlanEnvelope>(encoded).sessions.first().steps.first().targetHeartRateMax)
+        assertTrue(plan.sessions.filter { it.type == "RUN" }.flatMap { it.steps }.none { it.exerciseId == "walk" })
         val output = File("build/outputs/plans/base-one-2026-10-13.mountain-plan.json")
         requireNotNull(output.parentFile).mkdirs()
         output.writeText(encoded)
+    }
+
+    @Test
+    fun fromNovemberStrengthIsHeavierAndMatchesTheGarminWorkout() {
+        val progression = sessions.single { LocalDate.ofEpochDay(it.plannedEpochDay) == LocalDate.of(2026, 11, 4) }
+        assertEquals("Дом · сила, прогрессия", progression.title)
+        assertEquals(
+            listOf("warmup", "kettlebell-swing", "single-leg-kb-deadlift", "goblet-split-squat", "bulgarian-split-squat",
+                "step-down", "pull-up", "push-up", "calf", "bridge", "core", "forearm-plank", "cooldown"),
+            progression.steps.map { it.id },
+        )
+        val targets = WorkoutPlanCompiler.compile(progression.steps)
+        assertEquals(3, targets.count { it.step.id == "kettlebell-swing" })
+        assertEquals(3, targets.count { it.step.id == "pull-up" })
+        assertEquals(listOf(8, 8, 8), targets.filter { it.step.id == "goblet-split-squat" }.map { it.plannedReps })
+        val deload = sessions.single { LocalDate.ofEpochDay(it.plannedEpochDay) == LocalDate.of(2026, 11, 11) }
+        assertTrue(deload.steps.none { it.id == "bulgarian-split-squat" })
+        assertEquals(2, WorkoutPlanCompiler.compile(deload.steps).count { it.step.id == "kettlebell-swing" })
+        assertEquals("3 минуты", progression.steps.last().prescription)
+        assertTrue(sessions.filter { it.plannedEpochDay >= LocalDate.of(2026, 10, 30).toEpochDay() }
+            .flatMap { it.steps }.none { it.title == "Dead bug" })
     }
 }

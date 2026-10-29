@@ -118,4 +118,21 @@ class CalendarScreenTest {
         composeRule.onNodeWithText("1 выполнена").performScrollTo().assertIsDisplayed()
         composeRule.onNodeWithContentDescription("Выполнено").performScrollTo().assertIsDisplayed()
     }
+
+    @Test
+    fun chosenMonthSurvivesLeavingTheScreen() {
+        val restoration = androidx.compose.ui.test.junit4.StateRestorationTester(composeRule)
+        restoration.setContent {
+            MountainFormTheme {
+                CalendarScreen(PaddingValues(), AppUiState(), {}, { _, _, _ -> }, {})
+            }
+        }
+        val next = java.time.YearMonth.now().plusMonths(1)
+        val title = next.month.getDisplayName(java.time.format.TextStyle.FULL_STANDALONE, java.util.Locale.forLanguageTag("ru"))
+            .replaceFirstChar { it.uppercase() } + " ${next.year}"
+        composeRule.onNodeWithContentDescription("Следующий месяц").performClick()
+        composeRule.onNodeWithText(title).assertIsDisplayed()
+        restoration.emulateSavedInstanceStateRestore()
+        composeRule.onNodeWithText(title).assertIsDisplayed()
+    }
 }

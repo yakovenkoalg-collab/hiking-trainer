@@ -41,6 +41,7 @@ import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import ru.yakovenko.mountainform.data.ExerciseStep
+import ru.yakovenko.mountainform.data.SessionSetLogEntity
 import ru.yakovenko.mountainform.data.catalogId
 import ru.yakovenko.mountainform.data.targetLabel
 import ru.yakovenko.mountainform.domain.WorkoutSetTarget
@@ -53,9 +54,9 @@ internal fun objectivePoints(objective: String): List<String> = objective
     .map { it.trim() }
     .filter { it.isNotEmpty() }
 
-/** The planned intensity of the session, when all its heart-rate and pace targets agree. */
+/** The planned intensity of the session: the target of its longest step with one, such as the main easy run. */
 internal fun sessionTargetLabel(steps: List<ExerciseStep>): String? =
-    steps.mapNotNull { it.targetLabel() }.distinct().singleOrNull()
+    steps.filter { it.targetLabel() != null }.maxByOrNull { it.workSeconds ?: 0 }?.targetLabel()
 
 /** The dose of a step for a one-line plan row; the intensity target is added unless the dose already names it. */
 internal fun planRowDose(step: ExerciseStep): String {
@@ -135,7 +136,7 @@ internal fun SessionPlanCard(objective: String, targets: List<WorkoutSetTarget>)
 }
 
 @Composable
-private fun PlanStepRow(step: ExerciseStep) {
+private fun PlanStepRow(step: ExerciseStep, dose: String = planRowDose(step), muted: Boolean = false) {
     val illustration = remember(step) { stepIllustration(step) }
     var zoomed by remember(step) { mutableStateOf(false) }
     Row(
@@ -175,8 +176,54 @@ private fun PlanStepRow(step: ExerciseStep) {
         if (zoomed && illustration != null) IllustrationZoomDialog(illustration) { zoomed = false }
         Column(Modifier.weight(1f)) {
             Text(step.title, style = MaterialTheme.typography.bodyLarge)
-            planRowDose(step).takeIf { it.isNotEmpty() }?.let {
-                Text(it, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            dose.takeIf { it.isNotEmpty() }?.let {
+                Text(
+                    it,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = if (muted) MaterialTheme.colorScheme.outline else MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+        }
+    }
+}
+
+/** What was actually done in a step of a finished workout, from its recorded sets. */
+internal fun doneDose(stepTargets: List<WorkoutSetTarget>, logs: List<SessionSetLogEntity>): String {
+    val step = stepTargets.first().step
+    val done = logs.filter { it.stepId == step.id && it.completed }.distinctBy { it.roundIndex to it.setIndex }
+    if (done.isEmpty()) return "не отмечено"
+    val planned = stepTargets.size
+    val reps = done.mapNotNull { it.actualReps ?: it.plannedReps }
+    val repsText = when {
+        reps.isEmpty() -> stepTargets.first().workSeconds?.let { seconds ->
+            if (seconds % 60 == 0) "${seconds / 60} мин" else "$seconds сек"
+        }
+        reps.distinct().size == 1 -> "по ${reps.first()}"
+        else -> reps.joinToString(", ")
+    }
+    val load = done.mapNotNull { it.loadKg }.maxOrNull()?.let { kg ->
+        if (kg % 1.0 == 0.0) "${kg.toInt()} кг" else "$kg кг"
+    }
+    val count = if (planned > 1) "${done.size} из $planned" else null
+    return listOfNotNull(count, repsText, load).joinToString(" · ").ifEmpty { "выполнено" }
+}
+
+/** The plan of a finished workout with what was recorded for each exercise. */
+@Composable
+internal fun CompletedSessionCard(targets: List<WorkoutSetTarget>, logs: List<SessionSetLogEntity>) {
+    Card {
+        Column(Modifier.fillMaxWidth().padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+            Text("Что сделано", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+            planBlocks(targets).forEach { block ->
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    block.title?.let {
+                        Text(it, style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.primary)
+                    }
+                    block.steps.forEach { step ->
+                        val dose = doneDose(targets.filter { it.step.id == step.id }, logs)
+                        PlanStepRow(step, dose = dose, muted = dose == "не отмечено")
+                    }
+                }
             }
         }
     }

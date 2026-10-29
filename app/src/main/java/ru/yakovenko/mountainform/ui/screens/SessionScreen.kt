@@ -675,9 +675,20 @@ fun SessionScreen(
                             modifier = Modifier.fillMaxWidth(),
                         )
                     } else {
-                        Text(formatEpochDay(session.plannedEpochDay), color = MaterialTheme.colorScheme.primary)
+                        Text(
+                            (session.performedEpochDay ?: session.plannedEpochDay).let(::formatEpochDay),
+                            color = MaterialTheme.colorScheme.primary,
+                        )
                         SessionFacts(
-                            listOfNotNull("${session.durationMinutes} мин", "RPE ${session.targetRpe}", sessionTargetLabel(steps)),
+                            if (session.status == SessionStatus.COMPLETED) {
+                                listOfNotNull(
+                                    "Выполнено",
+                                    session.actualDurationSeconds.takeIf { it > 0 }?.let { "${(it + 30) / 60} мин" },
+                                    session.actualRpe?.let { "RPE $it" },
+                                )
+                            } else {
+                                listOfNotNull("${session.durationMinutes} мин", "RPE ${session.targetRpe}", sessionTargetLabel(steps))
+                            },
                         )
                     }
                 }
@@ -948,6 +959,9 @@ fun SessionScreen(
                 }
             }
 
+            if (session.status == SessionStatus.COMPLETED && targets.isNotEmpty()) {
+                item { CompletedSessionCard(targets, sessionSetLogs) }
+            }
             if (session.status != SessionStatus.PLANNED) {
                 item {
                     Card {
@@ -956,12 +970,7 @@ fun SessionScreen(
                                 if (session.status == SessionStatus.COMPLETED) "Тренировка выполнена" else "Тренировка остановлена или пропущена",
                                 fontWeight = FontWeight.Bold,
                             )
-                            session.actualRpe?.let { Text("Фактический RPE: $it") }
-                            session.performedEpochDay?.let { Text("Выполнено: ${formatEpochDay(it)}") }
                             if (session.recordingMode == "RETROSPECTIVE") Text("Записано после занятия · без таймеров подходов", style = MaterialTheme.typography.bodySmall)
-                            if (session.actualDurationSeconds > 0) {
-                                Text("Фактическое время: ${formatDuration(session.actualDurationSeconds)}")
-                            }
                             if (session.completionNotes.isNotBlank()) Text(session.completionNotes)
                             if (session.status == SessionStatus.SKIPPED) {
                                 OutlinedButton(

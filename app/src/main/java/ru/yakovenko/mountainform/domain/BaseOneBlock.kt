@@ -8,10 +8,10 @@ import java.time.LocalDate
 
 /** Explicitly agreed dated proposal; never applied by an APK update. */
 object BaseOneBlock {
-    const val PLAN_ID = "base-one-2026-10-13-v3"
+    const val PLAN_ID = "base-one-2026-10-13-v4"
 
     /** Earlier revisions of the same block (file export and the first bundled one); this revision supersedes them. */
-    val SUPERSEDED_PLAN_IDS = setOf("base1-2026-10-13-v1", "base-one-2026-10-13-v2")
+    val SUPERSEDED_PLAN_IDS = setOf("base1-2026-10-13-v1", "base-one-2026-10-13-v2", "base-one-2026-10-13-v3")
     const val EASY_HEART_RATE_MAX = 148
     val availableFrom: LocalDate = LocalDate.of(2026, 10, 12)
     val through: LocalDate = LocalDate.of(2026, 11, 15)
@@ -20,7 +20,10 @@ object BaseOneBlock {
     private const val EASY_RUN_TECHNIQUE = "Разговор полными фразами. Пульс выше $EASY_HEART_RATE_MAX — замедлитесь " +
         "или идите шагом, пока не опустится до 140. На дорожке: уклон 1%, 8,3–9,0 км/ч по пульсу. " +
         "При боли, которая меняет технику, остановитесь."
-    private const val EASY_RUN = "Пульс не выше $EASY_HEART_RATE_MAX, темп любой. Выше — шаг, пока не опустится до 140."
+    const val CALM_START_HEART_RATE_MAX = 140
+    private const val CALM_START_MINUTES = 10
+    private const val EASY_RUN = "Первые 10 минут — пульс до $CALM_START_HEART_RATE_MAX, дальше до $EASY_HEART_RATE_MAX. " +
+        "Выше — шаг, пока пульс не опустится."
     private const val LOW_READINESS = "При низкой готовности утром — ходьба 30 минут."
     private const val LONG_RUN = "На подъёмах — шаг."
     private const val AFTER_STRENGTH = "После силовой выбирайте ровный маршрут."
@@ -41,7 +44,9 @@ object BaseOneBlock {
             "Упражнения, закрытые текущим ограничением плеча, в блок не включены. "
         } else "") + "13 октября — 15 ноября. Три лёгкие пробежки с границей пульса $EASY_HEART_RATE_MAX и одна домашняя " +
             "силовая в неделю. Бег растёт со 110 до 170 минут в неделю, 9–15 ноября — разгрузка. " +
-            "Версия 3: тексты занятий сокращены, нагрузка и даты не менялись. " +
+            "Версия 4: с 4 ноября силовая тяжелее — махи и тяга гири на одной ноге, сплит-присед с гирей, " +
+            "болгарский сплит-присед, больше подходов верха. Пробежки без ходьбы: первые 10 минут — спокойный " +
+            "старт с пульсом до 140. Объём бега и даты не менялись. " +
             "При боли, болезни или ухудшении на следующий день нагрузку сократить; пропущенное не компенсировать.",
         generatedAtEpochMillis = generatedAtEpochMillis,
         replacePlannedFromEpochDay = maxOf(today, availableFrom.plusDays(1)).toEpochDay(),
@@ -74,12 +79,12 @@ object BaseOneBlock {
         run(11, 1, 70, "Длительный лёгкий бег · 70 мин", "$LONG_RUN Возьмите воду."),
 
         stridesRun(11, 3, firstMinutes = 26, strides = 6, lastMinutes = 8),
-        strength(11, 4, sets = 3, squatReps = 10, stepReps = 10),
+        progressedStrength(11, 4, light = false),
         run(11, 6, 45, "Лёгкий бег · 45 мин", AFTER_STRENGTH),
         run(11, 8, 80, "Длительный лёгкий бег · 80 мин", "$LONG_RUN Возьмите воду."),
 
         run(11, 10, 35, "Лёгкий бег · 35 мин · разгрузка", DELOAD),
-        strength(11, 11, sets = 2, squatReps = 8, stepReps = 8, light = true),
+        progressedStrength(11, 11, light = true),
         run(11, 13, 35, "Лёгкий бег · 35 мин · разгрузка", DELOAD),
         run(11, 15, 60, "Длительный лёгкий бег · 60 мин · разгрузка", LONG_RUN),
     )
@@ -93,7 +98,7 @@ object BaseOneBlock {
     }
 
     private fun walk(id: String, title: String, seconds: Int, instructions: String) = ExerciseStep(
-        id, title, "${seconds / 60} минут", instructions, exerciseId = "walk", illustrationKey = "walk",
+        id, title, minutesLabel(seconds / 60), instructions, exerciseId = "walk", illustrationKey = "walk",
         blockId = id, blockTitle = title, blockType = WorkoutBlockType.AEROBIC, workSeconds = seconds,
     )
 
@@ -103,14 +108,21 @@ object BaseOneBlock {
         blockType = WorkoutBlockType.AEROBIC, workSeconds = minutes * 60, targetHeartRateMax = EASY_HEART_RATE_MAX,
     )
 
-    private fun warmup() = walk("warmup", "Ходьба перед бегом", 300, "Начните спокойно.")
+    /** Replaces walking before the run: the first minutes are running, just slower, so the pulse does not overshoot. */
+    private fun calmStart() = ExerciseStep(
+        "calm-start", "Спокойный старт", "$CALM_START_MINUTES минут · пульс до $CALM_START_HEART_RATE_MAX",
+        "Не быстрее 7:00/км. Пульс отстаёт от нагрузки на несколько минут, поэтому низкие цифры в начале — " +
+            "не повод ускоряться.",
+        exerciseId = "run-walk", illustrationKey = "run-walk", blockId = "calm-start", blockTitle = "Спокойный старт",
+        blockType = WorkoutBlockType.AEROBIC, workSeconds = CALM_START_MINUTES * 60,
+        targetHeartRateMax = CALM_START_HEART_RATE_MAX,
+    )
 
     private fun run(month: Int, day: Int, minutes: Int, title: String, note: String) = session(
-        month, day, title, "RUN", minutes + 10, 3, "$EASY_RUN $note",
+        month, day, title, "RUN", minutes, 3, "$EASY_RUN $note",
         listOf(
-            warmup(),
-            easy("easy-run", "Лёгкий бег", minutes, EASY_RUN_TECHNIQUE),
-            walk("cooldown", "Ходьба после бега", 300, "Спокойно восстановите дыхание."),
+            calmStart(),
+            easy("easy-run", "Лёгкий бег", minutes - CALM_START_MINUTES, EASY_RUN_TECHNIQUE),
         ),
     )
 
@@ -118,11 +130,11 @@ object BaseOneBlock {
         val total = firstMinutes + lastMinutes + (strides * 110 + 30) / 60
         val block = "Ускорения"
         return session(
-            month, day, "Лёгкий бег + ускорения $strides × 20 сек", "RUN", total + 10, 3,
+            month, day, "Лёгкий бег + ускорения $strides × 20 сек", "RUN", total, 3,
             "$EASY_RUN Ускорения плавные, не спринт. При усталости пропустите их.",
             listOf(
-                warmup(),
-                easy("easy-run", "Лёгкий бег", firstMinutes, EASY_RUN_TECHNIQUE),
+                calmStart(),
+                easy("easy-run", "Лёгкий бег", firstMinutes - CALM_START_MINUTES, EASY_RUN_TECHNIQUE),
                 ExerciseStep("stride", "Плавное ускорение", "$strides × 20 сек · не спринт",
                     "Плавно наберите скорость до быстрой, но расслабленной. На пульс не смотрите. " +
                         "На дорожке: 12–13 км/ч, не держась за поручни.",
@@ -133,7 +145,6 @@ object BaseOneBlock {
                     illustrationKey = "stride-recovery", blockId = "strides", blockTitle = block,
                     blockType = WorkoutBlockType.CIRCUIT, rounds = strides, workSeconds = 90),
                 easy("easy-run-finish", "Лёгкий бег", lastMinutes, EASY_RUN_TECHNIQUE),
-                walk("cooldown", "Ходьба после бега", 300, "Спокойно восстановите дыхание."),
             ),
         )
     }
@@ -148,9 +159,10 @@ object BaseOneBlock {
         id: String, title: String, dose: String, note: String, blockId: String, blockTitle: String, rest: Int,
         illustration: String, reps: Int? = null, seconds: Int? = null, tags: List<String> = emptyList(),
         restAfterRound: Int = rest,
+        rounds: Int = 2,
     ) = ExerciseStep(id, title, dose, note, restSeconds = rest, restrictionTags = tags, exerciseId = id,
-        illustrationKey = illustration, blockId = blockId, blockTitle = "$blockTitle · 2 круга",
-        blockType = WorkoutBlockType.CIRCUIT, rounds = 2, reps = reps, workSeconds = seconds,
+        illustrationKey = illustration, blockId = blockId, blockTitle = "$blockTitle · $rounds круга",
+        blockType = WorkoutBlockType.CIRCUIT, rounds = rounds, reps = reps, workSeconds = seconds,
         restAfterRoundSeconds = restAfterRound)
 
     private fun strength(month: Int, day: Int, sets: Int, squatReps: Int, stepReps: Int, light: Boolean = false) = session(
@@ -185,7 +197,7 @@ object BaseOneBlock {
             circuit("bridge", "Ягодичный мост на одной ноге", "2 × 10 на ногу",
                 "Таз ровный, пауза вверху, не прогибайте поясницу.", "core", "Икры и core", 60, "glute-bridge",
                 reps = 10),
-            circuit("core", "Dead bug", "2 × 8 на сторону",
+            circuit("core", "Мёртвый жук", "2 × 8 на сторону",
                 "Лёжа на спине, удерживайте рёбра и таз, плавно двигайте ногами без прогиба поясницы.",
                 "core", "Икры и core", 60, "dead-bug-legs", reps = 8),
             circuit("forearm-plank", "Планка на предплечьях", "2 × 40 сек · вместо утренней",
@@ -195,5 +207,63 @@ object BaseOneBlock {
             walk("cooldown", "Завершение", 180,
                 "Ходьба и восстановление дыхания. Следующим утром оцените колено и плечо; не добавляйте подходы."),
         ),
+    )
+
+    private fun minutesLabel(minutes: Int): String = "$minutes " + when {
+        minutes % 100 in 11..14 -> "минут"
+        minutes % 10 == 1 -> "минута"
+        minutes % 10 in 2..4 -> "минуты"
+        else -> "минут"
+    }
+
+    /** From 4 November: the home session the user outgrew, with load added in every block; matches the Garmin workout. */
+    private fun progressedStrength(month: Int, day: Int, light: Boolean) = session(
+        month, day, if (light) "Дом · сила, разгрузка" else "Дом · сила, прогрессия", "STRENGTH",
+        if (light) 40 else 55, if (light) 4 else 6,
+        if (light) "Разгрузка: меньше подходов. Усилие 4–5 из 10. Без боли в колене и плече."
+        else "Нагрузка 6–7 из 10. Последние 2–3 повтора даются с трудом. " +
+            "Опускание медленное, техника не ломается. Без боли в колене и плече.",
+        buildList {
+            val rounds = if (light) 2 else 3
+            add(walk("warmup", "Разминка", 480,
+                "Спокойная ходьба, подвижность суставов, несколько махов и приседаний без веса."))
+            add(circuit("kettlebell-swing", "Махи гирей", "$rounds × 15 · 16 кг",
+                "Наклон от таза с ровной спиной, гиря между бёдер, затем резкое разгибание таза — гиря поднимается " +
+                    "до груди за счёт бёдер, а не рук.", "swing", "Махи и тяга", 30, "kettlebell-swing", reps = 15,
+                tags = listOf("SHOULDER_CLEARANCE_REQUIRED"), restAfterRound = 90, rounds = rounds))
+            add(circuit("single-leg-kb-deadlift", "Тяга гири на одной ноге",
+                "$rounds × ${if (light) 6 else 8} на ногу · 16 кг",
+                "Гиря в руке со стороны свободной ноги. Наклон от таза с ровной спиной, свободная нога назад на одной " +
+                    "линии с корпусом; колено опорной ноги слегка согнуто.", "swing", "Махи и тяга", 30,
+                "single-leg-kb-deadlift", reps = if (light) 6 else 8, tags = listOf("SHOULDER_CLEARANCE_REQUIRED"),
+                restAfterRound = 90, rounds = rounds))
+            add(lift("goblet-split-squat", "Сплит-присед с гирей у груди", "$rounds × 8 на ногу · 16 кг",
+                "Гиря за рожки у груди, разножка, обе стопы на полу. Три секунды вниз, корпус прямо, колено над стопой.",
+                rounds, 8, 90, "goblet-split-squat", listOf("SHOULDER_CLEARANCE_REQUIRED")))
+            if (!light) add(lift("bulgarian-split-squat", "Болгарский сплит-присед", "3 × 8 на ногу · медленно вниз",
+                "Подъём задней стопы на скамье или стуле. Три секунды вниз до бедра почти параллельно полу, " +
+                    "колено над стопой.", 3, 8, 75, "bulgarian-split-squat"))
+            add(lift("step-down", "Спуск со ступени", "2 × ${if (light) 8 else 10} на ногу · медленно вниз",
+                "Ступень повыше, чем раньше. Четыре секунды вниз, таз ровно, колено не заваливается внутрь. " +
+                    "Без боли сзади колена.", 2, if (light) 8 else 10, 60, "step-down"))
+            add(circuit("pull-up", "Подтягивания", "$rounds × ${if (light) 6 else 8}",
+                "Без раскачивания, рывков и отказа.", "upper", "Верх тела", 30, "pull-up",
+                reps = if (light) 6 else 8, tags = listOf("HANGING"), restAfterRound = 90, rounds = rounds))
+            add(circuit("push-up", "Отжимания", "$rounds × ${if (light) 15 else 20}",
+                "Локти под 30–45° к корпусу, тело — прямая линия. Закончите до отказа.", "upper", "Верх тела", 30, "",
+                reps = if (light) 15 else 20, tags = listOf("PUSH_UP"), restAfterRound = 90, rounds = rounds))
+            add(circuit("calf", "Подъём на носок одной ногой", "2 × ${if (light) 12 else 15} на ногу",
+                "Лёгкая опора для равновесия, полная амплитуда, три секунды вниз.", "core", "Икры и core", 30,
+                "calf-raise", reps = if (light) 12 else 15))
+            add(circuit("bridge", "Ягодичный мост на одной ноге", "2 × ${if (light) 10 else 12} на ногу",
+                "Таз ровный, пауза вверху.", "core", "Икры и core", 30, "glute-bridge", reps = if (light) 10 else 12))
+            add(circuit("core", "Мёртвый жук", "2 × 10 на сторону",
+                "Лёжа на спине, рёбра и таз неподвижны, плавно двигайте руками и ногами.", "core", "Икры и core", 30,
+                "dead-bug-legs", reps = 10))
+            add(circuit("forearm-plank", "Планка на предплечьях", "2 × ${if (light) 45 else 60} сек",
+                "Локти под плечами, тело — прямая линия, дыхание свободное.", "core", "Икры и core", 30,
+                "forearm-plank", seconds = if (light) 45 else 60, tags = listOf("PLANK"), restAfterRound = 60))
+            add(walk("cooldown", "Завершение", 180, "Ходьба и восстановление дыхания."))
+        },
     )
 }
