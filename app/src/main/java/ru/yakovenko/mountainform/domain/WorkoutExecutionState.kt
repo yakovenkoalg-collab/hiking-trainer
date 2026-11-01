@@ -53,7 +53,8 @@ data class WorkoutExecutionState(
                 timerTickStartedAtEpochMillis = null,
             )
         }
-        return copy(workoutTickStartedAtEpochMillis = nowEpochMillis)
+        // A workout goes on while the phone is locked or the app is closed, so the tick keeps its start.
+        return if (workoutTickStartedAtEpochMillis == null) copy(workoutTickStartedAtEpochMillis = nowEpochMillis) else this
     }
 
     fun workoutElapsedAt(nowEpochMillis: Long): Int = workoutElapsedSeconds +

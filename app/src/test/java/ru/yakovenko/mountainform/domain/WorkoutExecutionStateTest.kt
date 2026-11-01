@@ -97,6 +97,51 @@ class WorkoutExecutionStateTest {
     }
 
     @Test
+    fun workoutTimerKeepsCountingWhileThePhoneIsLocked() {
+        val running = WorkoutExecutionState(
+            sessionId = "session",
+            workoutStarted = true,
+            workoutElapsedSeconds = 60,
+            workoutTickStartedAtEpochMillis = 10_000,
+        )
+
+        val locked = running.snapshotAt(70_000)
+        val unlocked = locked.restoreForForeground(nowEpochMillis = 370_000)
+
+        assertEquals(120, locked.workoutElapsedAt(70_000))
+        assertEquals(420, unlocked.workoutElapsedAt(370_000))
+    }
+
+    @Test
+    fun workoutTimerCountsTimeWhileTheAppWasClosed() {
+        val saved = WorkoutExecutionState(
+            sessionId = "session",
+            workoutStarted = true,
+            workoutElapsedSeconds = 600,
+            workoutTickStartedAtEpochMillis = 1_000_000,
+        )
+
+        val reopened = saved.restoreForForeground(nowEpochMillis = 1_300_000)
+
+        assertEquals(900, reopened.workoutElapsedAt(1_300_000))
+    }
+
+    @Test
+    fun lockedPhoneOverStaleLimitDoesNotAddTheHours() {
+        val locked = WorkoutExecutionState(
+            sessionId = "session",
+            workoutStarted = true,
+            workoutElapsedSeconds = 1_800,
+            workoutTickStartedAtEpochMillis = 1_000,
+        )
+
+        val restored = locked.restoreForForeground(nowEpochMillis = 4 * 60 * 60 * 1_000L)
+
+        assertEquals(true, restored.paused)
+        assertEquals(1_800, restored.workoutElapsedAt(99_000_000))
+    }
+
+    @Test
     fun completionDurationFlagsMultiDayAndSuspiciouslyShortValues() {
         assertEquals(true, durationLooksImplausible(4 * 60 * 60, 65))
         assertEquals(true, durationLooksImplausible(27, 55))

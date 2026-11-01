@@ -480,18 +480,13 @@ fun SessionScreen(
             when (event) {
                 Lifecycle.Event.ON_STOP -> {
                     if (executionState.workoutStarted && !executionState.paused) {
-                        persistExecution(
-                            executionState.snapshotAt(now).copy(workoutTickStartedAtEpochMillis = null),
-                        )
+                        persistExecution(executionState.snapshotAt(now))
                     }
                 }
                 Lifecycle.Event.ON_START -> {
-                    if (
-                        executionState.workoutStarted &&
-                        !executionState.paused &&
-                        executionState.workoutTickStartedAtEpochMillis == null
-                    ) {
-                        persistExecution(executionState.copy(workoutTickStartedAtEpochMillis = now))
+                    if (executionState.workoutStarted && !executionState.paused) {
+                        if (executionState.hasStaleRunningTimer(now)) showStaleTimerWarning = true
+                        persistExecution(executionState.restoreForForeground(now))
                     }
                 }
                 else -> Unit
@@ -511,14 +506,7 @@ fun SessionScreen(
         while (session.status == SessionStatus.PLANNED && executionState.workoutStarted && !executionState.paused) {
             val now = System.currentTimeMillis()
             if (executionState.hasStaleRunningTimer(now)) {
-                persistExecution(
-                    executionState.snapshotAt(now).copy(
-                        paused = true,
-                        workoutTickStartedAtEpochMillis = null,
-                        timerMode = WorkoutTimerMode.NONE,
-                        timerTickStartedAtEpochMillis = null,
-                    ),
-                )
+                persistExecution(executionState.restoreForForeground(now))
                 showStaleTimerWarning = true
                 break
             }
