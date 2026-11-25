@@ -21,8 +21,10 @@ body::before{content:"";position:fixed;inset:0 0 auto;height:env(safe-area-inset
 h1{font:600 clamp(1.35rem,5vw,1.8rem)/1.2 var(--display);margin:0;text-wrap:balance}
 .sub{margin:6px 0 0;color:var(--muted)}
 .bar{position:sticky;top:env(safe-area-inset-top,0px);z-index:5;background:var(--bg);margin-top:14px;padding-block:10px;display:grid;gap:10px;border-bottom:1px solid var(--line)}
-.tabs{display:flex;gap:6px}
-.tabs button{flex:1 1 0;min-width:0;min-height:44px;padding:6px 8px;border:1px solid var(--line);border-radius:10px;background:var(--surface);color:var(--fg);font:500 .9rem/1.2 var(--sans);cursor:pointer}
+.tabs{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:6px}
+.tabs #tab-daily,.tabs #tab-all{grid-column:span 2}
+@media (min-width:560px){.tabs{grid-template-columns:repeat(4,minmax(0,1fr)) minmax(0,1.4fr) minmax(0,1fr)}.tabs #tab-daily,.tabs #tab-all{grid-column:auto}}
+.tabs button{min-width:0;min-height:44px;padding:6px 8px;border:1px solid var(--line);border-radius:10px;background:var(--surface);color:var(--fg);font:500 .9rem/1.2 var(--sans);cursor:pointer}
 .tabs button[aria-selected="true"]{background:var(--accent);border-color:var(--accent);color:var(--on-accent)}
 input[type=search]{width:100%;min-height:44px;padding:8px 12px;border:1px solid var(--line);border-radius:10px;background:var(--surface);color:var(--fg);font:400 1rem var(--sans)}
 :focus-visible{outline:2px solid var(--accent);outline-offset:2px}
@@ -62,13 +64,14 @@ dialog button{display:block;width:100%;min-height:48px;border:0;background:#173B
 </style>
 <div class="wrap">
 <h1>Техника упражнений</h1>
-<p class="sub">Силовая на нужную дату по порядку или весь справочник.</p>
+<p class="sub">Силовая на нужную дату по порядку, ежедневная зарядка или весь справочник.</p>
 <div class="bar">
 <div class="tabs" role="tablist" aria-label="Что показать">
 <button type="button" role="tab" id="tab-w1" data-view="w1" aria-selected="false">18.11</button>
 <button type="button" role="tab" id="tab-w2" data-view="w2" aria-selected="false">25.11</button>
 <button type="button" role="tab" id="tab-w3" data-view="w3" aria-selected="false">2.12</button>
 <button type="button" role="tab" id="tab-w4" data-view="w4" aria-selected="false">9.12</button>
+<button type="button" role="tab" id="tab-daily" data-view="daily" aria-selected="false">Зарядка</button>
 <button type="button" role="tab" id="tab-all" data-view="all" aria-selected="false">Все</button>
 </div>
 <input type="search" id="q" placeholder="Найти упражнение" aria-label="Найти упражнение" hidden>
@@ -132,7 +135,7 @@ dialog button{display:block;width:100%;min-height:48px;border:0;background:#173B
 <dt>Частые ошибки</dt><dd><ul><li>Провисать в пояснице</li><li>Разводить локти в стороны</li><li>Тянуть голову вперёд</li></ul></dd>
 </dl></details></div></article></section><section class="block"><header><h2>Икры и core</h2><p class="note">Круг, 2 раунда · 30 сек между упражнениями · 60 сек после круга</p></header><article class="ex" data-search="подъём на носок одной ногой подъём на носки сила голени и устойчивость стопы для подъёмов и спусков. силовая работа ">
 <button class="pic" type="button" data-zoom="img/single_leg_calf_raise.jpg" aria-label="Увеличить схему: Подъём на носок одной ногой"><img src="img/single_leg_calf_raise.jpg" alt="Схема: Подъём на носок одной ногой" loading="lazy" width="960" height="540"></button>
-<div class="body"><h3>Подъём на носок одной ногой</h3><p class="dose">2 × 15 на ногу</p><p class="cue">Лёгкая опора для равновесия, полная амплитуда, три секунды вниз.</p>
+<div class="body"><h3>Подъём на носок одной ногой</h3><p class="dose">2 × 15 на ногу</p><p class="cue">Лёгкая опора для равновесия. Вверх на 1 счёт, пауза наверху 1 сек, вниз 3 сек. Можно с края ступеньки, опуская пятку чуть ниже.</p>
 <details><summary>Как делать</summary><dl>
 <dt>Подготовка</dt><dd>Встаньте у устойчивой опоры, стопы параллельно, давление распределено равномерно.</dd>
 <dt>Выполнение</dt><dd>Поднимитесь на носки, задержитесь и медленно опуститесь до пола.</dd>
@@ -213,7 +216,7 @@ dialog button{display:block;width:100%;min-height:48px;border:0;background:#173B
 <dt>Частые ошибки</dt><dd><ul><li>Провисать в пояснице</li><li>Разводить локти в стороны</li><li>Тянуть голову вперёд</li></ul></dd>
 </dl></details></div></article></section><section class="block"><header><h2>Икры и core</h2><p class="note">Круг, 2 раунда · 30 сек между упражнениями · 60 сек после круга</p></header><article class="ex" data-search="подъём на носок одной ногой подъём на носки сила голени и устойчивость стопы для подъёмов и спусков. силовая работа ">
 <button class="pic" type="button" data-zoom="img/single_leg_calf_raise.jpg" aria-label="Увеличить схему: Подъём на носок одной ногой"><img src="img/single_leg_calf_raise.jpg" alt="Схема: Подъём на носок одной ногой" loading="lazy" width="960" height="540"></button>
-<div class="body"><h3>Подъём на носок одной ногой</h3><p class="dose">2 × 18 на ногу</p><p class="cue">Лёгкая опора для равновесия, полная амплитуда, три секунды вниз.</p>
+<div class="body"><h3>Подъём на носок одной ногой</h3><p class="dose">2 × 18 на ногу</p><p class="cue">Лёгкая опора для равновесия. Вверх на 1 счёт, пауза наверху 1 сек, вниз 3 сек. Можно с края ступеньки, опуская пятку чуть ниже.</p>
 <details><summary>Как делать</summary><dl>
 <dt>Подготовка</dt><dd>Встаньте у устойчивой опоры, стопы параллельно, давление распределено равномерно.</dd>
 <dt>Выполнение</dt><dd>Поднимитесь на носки, задержитесь и медленно опуститесь до пола.</dd>
@@ -294,7 +297,7 @@ dialog button{display:block;width:100%;min-height:48px;border:0;background:#173B
 <dt>Частые ошибки</dt><dd><ul><li>Провисать в пояснице</li><li>Разводить локти в стороны</li><li>Тянуть голову вперёд</li></ul></dd>
 </dl></details></div></article></section><section class="block"><header><h2>Икры и core</h2><p class="note">Круг, 2 раунда · 30 сек между упражнениями · 60 сек после круга</p></header><article class="ex" data-search="подъём на носок одной ногой подъём на носки сила голени и устойчивость стопы для подъёмов и спусков. силовая работа ">
 <button class="pic" type="button" data-zoom="img/single_leg_calf_raise.jpg" aria-label="Увеличить схему: Подъём на носок одной ногой"><img src="img/single_leg_calf_raise.jpg" alt="Схема: Подъём на носок одной ногой" loading="lazy" width="960" height="540"></button>
-<div class="body"><h3>Подъём на носок одной ногой</h3><p class="dose">2 × 20 на ногу</p><p class="cue">Лёгкая опора для равновесия, полная амплитуда, три секунды вниз.</p>
+<div class="body"><h3>Подъём на носок одной ногой</h3><p class="dose">2 × 20 на ногу</p><p class="cue">Лёгкая опора для равновесия. Вверх на 1 счёт, пауза наверху 1 сек, вниз 3 сек. Можно с края ступеньки, опуская пятку чуть ниже.</p>
 <details><summary>Как делать</summary><dl>
 <dt>Подготовка</dt><dd>Встаньте у устойчивой опоры, стопы параллельно, давление распределено равномерно.</dd>
 <dt>Выполнение</dt><dd>Поднимитесь на носки, задержитесь и медленно опуститесь до пола.</dd>
@@ -375,7 +378,7 @@ dialog button{display:block;width:100%;min-height:48px;border:0;background:#173B
 <dt>Частые ошибки</dt><dd><ul><li>Провисать в пояснице</li><li>Разводить локти в стороны</li><li>Тянуть голову вперёд</li></ul></dd>
 </dl></details></div></article></section><section class="block"><header><h2>Икры и core</h2><p class="note">Круг, 2 раунда · 30 сек между упражнениями · 60 сек после круга</p></header><article class="ex" data-search="подъём на носок одной ногой подъём на носки сила голени и устойчивость стопы для подъёмов и спусков. силовая работа ">
 <button class="pic" type="button" data-zoom="img/single_leg_calf_raise.jpg" aria-label="Увеличить схему: Подъём на носок одной ногой"><img src="img/single_leg_calf_raise.jpg" alt="Схема: Подъём на носок одной ногой" loading="lazy" width="960" height="540"></button>
-<div class="body"><h3>Подъём на носок одной ногой</h3><p class="dose">2 × 12 на ногу</p><p class="cue">Лёгкая опора для равновесия, полная амплитуда, три секунды вниз.</p>
+<div class="body"><h3>Подъём на носок одной ногой</h3><p class="dose">2 × 12 на ногу</p><p class="cue">Лёгкая опора для равновесия. Вверх на 1 счёт, пауза наверху 1 сек, вниз 3 сек. Можно с края ступеньки, опуская пятку чуть ниже.</p>
 <details><summary>Как делать</summary><dl>
 <dt>Подготовка</dt><dd>Встаньте у устойчивой опоры, стопы параллельно, давление распределено равномерно.</dd>
 <dt>Выполнение</dt><dd>Поднимитесь на носки, задержитесь и медленно опуститесь до пола.</dd>
@@ -406,6 +409,23 @@ dialog button{display:block;width:100%;min-height:48px;border:0;background:#173B
 <dt>Дыхание</dt><dd>Дышите ровно, не задерживайте дыхание.</dd>
 <dt>Частые ошибки</dt><dd><ul><li>Провисать в пояснице</li><li>Поднимать таз вверх</li><li>Опускать голову</li></ul></dd>
 </dl></details></div></article></section><div class="plain"><h3>Завершение</h3><p class="dose">3 минуты</p><p class="cue">Ходьба и восстановление дыхания.</p></div></div>
+<div class="view" id="view-daily" hidden><p class="goal"><strong>Каждый день после вращений в суставах</strong>, пока ощущается левый ахилл. Это удержания, а не подъёмы: поднялись на носок на половину высоты и держите. Около 10 минут.</p><p class="goal"><strong>Без боли.</strong> Главная проверка — утро следующего дня: если ахилл или плечо хуже, чем накануне, уменьшите усилие и напишите в разборе. Перед пробежкой можно сделать 2 удержания на левую ногу.</p><section class="block"><header><h2>Ахилл</h2><p class="note">Сначала левая нога, потом правая · отдыхом служит работа другой ноги</p></header><article class="ex" data-search="удержание на носке, колено прямое удержание на носке изометрия для ахиллова сухожилия и икры: сухожилие держит нагрузку без движения. силовая работа ">
+<button class="pic" type="button" data-zoom="img/single_leg_calf_raise.jpg" aria-label="Увеличить схему: Удержание на носке, колено прямое"><img src="img/single_leg_calf_raise.jpg" alt="Схема: Удержание на носке, колено прямое" loading="lazy" width="960" height="540"></button>
+<div class="body"><h3>Удержание на носке, колено прямое</h3><p class="dose">Левая 4 × 30–45 сек · правая 2 × 30–45 сек</p><p class="cue">Половина высоты, давить в пол, усилие 6–7 из 10. Если без веса легко — гиря 16 кг в руке со стороны опорной ноги.</p>
+<details><summary>Как делать</summary><dl>
+<dt>Подготовка</dt><dd>Встаньте на одну ногу у стены или стола, кончики пальцев на опоре — только для равновесия. Колено опорной ноги прямое, свободная нога согнута назад.</dd>
+<dt>Выполнение</dt><dd>Поднимитесь на носок примерно на половину высоты: пятка над полом на 3–5 см. Держите 30–45 секунд, давя подушечкой стопы в пол, будто хотите подняться выше. Опуститесь и смените ногу.</dd>
+<dt>Дыхание</dt><dd>Дышите ровно всё удержание.</dd>
+<dt>Частые ошибки</dt><dd><ul><li>Заваливать стопу наружу, на мизинец</li><li>Опускать пятку к концу подхода</li><li>Переносить вес на руки</li><li>Задерживать дыхание</li></ul></dd>
+</dl></details></div></article><article class="ex" data-search="удержание на носке с согнутым коленом удержание на носке с согнутым коленом изометрия для камбаловидной мышцы — она сильнее всего нагружает ахилл при беге. силовая работа ">
+<button class="pic" type="button" data-zoom="img/bent_knee_calf_raise.jpg" aria-label="Увеличить схему: Удержание на носке с согнутым коленом"><img src="img/bent_knee_calf_raise.jpg" alt="Схема: Удержание на носке с согнутым коленом" loading="lazy" width="960" height="540"></button>
+<div class="body"><h3>Удержание на носке с согнутым коленом</h3><p class="dose">Левая 4 × 30–45 сек · правая 2 × 30–45 сек</p><p class="cue">Колено согнуто на 30–40° и не разгибается. Половина высоты, усилие 6–7 из 10.</p>
+<details><summary>Как делать</summary><dl>
+<dt>Подготовка</dt><dd>Встаньте на одну ногу у опоры, кончики пальцев на опоре. Согните опорное колено на 30–40° и держите этот угол всё время.</dd>
+<dt>Выполнение</dt><dd>Не разгибая колено, поднимитесь на носок примерно на половину высоты. Держите 30–45 секунд, давя подушечкой стопы в пол. Опуститесь и смените ногу.</dd>
+<dt>Дыхание</dt><dd>Дышите ровно всё удержание.</dd>
+<dt>Частые ошибки</dt><dd><ul><li>Разгибать колено во время удержания</li><li>Заваливать стопу наружу, на мизинец</li><li>Опускать пятку к концу подхода</li><li>Переносить вес на руки</li><li>Задерживать дыхание</li></ul></dd>
+</dl></details></div></article></section><section class="block"><header><h2>Плечо</h2><p class="note">Мягко, без движения и без боли</p></header><div class="plain"><h3>Наружная ротация в дверном проёме</h3><p class="dose">3 × 30 сек · усилие 3–5 из 10</p><p class="cue">Локоть прижат к боку и согнут под 90°. Тыльной стороной кисти давите в косяк наружу.</p></div><div class="plain"><h3>Отведение в стену</h3><p class="dose">3 × 30 сек · усилие 3–5 из 10</p><p class="cue">Встаньте боком к стене, рука вдоль тела. Давите ребром ладони или предплечьем в стену в сторону.</p></div></section></div>
 <div class="view" id="view-all" hidden><section class="block" data-group><header><h2>Силовая работа</h2></header><article class="ex" data-search="махи гирей двумя руками махи гирей двумя руками мощность разгибания бедра и выносливость задней поверхности. силовая работа  гиря">
 <button class="pic" type="button" data-zoom="img/kettlebell_swing.jpg" aria-label="Увеличить схему: Махи гирей двумя руками"><img src="img/kettlebell_swing.jpg" alt="Схема: Махи гирей двумя руками" loading="lazy" width="960" height="540"></button>
 <div class="body"><h3>Махи гирей двумя руками</h3><p class="cue">Мощность разгибания бедра и выносливость задней поверхности.</p>
@@ -502,6 +522,30 @@ dialog button{display:block;width:100%;min-height:48px;border:0;background:#173B
 <dt>Выполнение</dt><dd>Поднимитесь на носки, задержитесь и медленно опуститесь до пола.</dd>
 <dt>Дыхание</dt><dd>Выдох на подъёме, вдох при опускании.</dd>
 <dt>Частые ошибки</dt><dd><ul><li>Заваливать стопы наружу</li><li>Пружинить</li><li>Переносить вес на руки</li></ul></dd>
+</dl></details></div></article><article class="ex" data-search="подъём на носок с согнутым коленом подъём на носок с согнутым коленом сила камбаловидной мышцы и ахиллова сухожилия для бега и спусков. силовая работа ">
+<button class="pic" type="button" data-zoom="img/bent_knee_calf_raise.jpg" aria-label="Увеличить схему: Подъём на носок с согнутым коленом"><img src="img/bent_knee_calf_raise.jpg" alt="Схема: Подъём на носок с согнутым коленом" loading="lazy" width="960" height="540"></button>
+<div class="body"><h3>Подъём на носок с согнутым коленом</h3><p class="cue">Сила камбаловидной мышцы и ахиллова сухожилия для бега и спусков.</p>
+<details><summary>Как делать</summary><dl>
+<dt>Подготовка</dt><dd>Встаньте на одну ногу у опоры, опорное колено согнуто на 30–40°.</dd>
+<dt>Выполнение</dt><dd>Не меняя угла в колене, поднимитесь на носок как можно выше на 1 счёт, задержитесь на 1 секунду и опуститесь за 3 секунды.</dd>
+<dt>Дыхание</dt><dd>Выдох на подъёме, вдох при опускании.</dd>
+<dt>Частые ошибки</dt><dd><ul><li>Разгибать колено на подъёме</li><li>Пружинить внизу</li><li>Заваливать стопу наружу</li></ul></dd>
+</dl></details></div></article><article class="ex" data-search="удержание на носке удержание на носке изометрия для ахиллова сухожилия и икры: сухожилие держит нагрузку без движения. силовая работа ">
+<button class="pic" type="button" data-zoom="img/single_leg_calf_raise.jpg" aria-label="Увеличить схему: Удержание на носке"><img src="img/single_leg_calf_raise.jpg" alt="Схема: Удержание на носке" loading="lazy" width="960" height="540"></button>
+<div class="body"><h3>Удержание на носке</h3><p class="cue">Изометрия для ахиллова сухожилия и икры: сухожилие держит нагрузку без движения.</p>
+<details><summary>Как делать</summary><dl>
+<dt>Подготовка</dt><dd>Встаньте на одну ногу у стены или стола, кончики пальцев на опоре — только для равновесия. Колено опорной ноги прямое, свободная нога согнута назад.</dd>
+<dt>Выполнение</dt><dd>Поднимитесь на носок примерно на половину высоты: пятка над полом на 3–5 см. Держите 30–45 секунд, давя подушечкой стопы в пол, будто хотите подняться выше. Опуститесь и смените ногу.</dd>
+<dt>Дыхание</dt><dd>Дышите ровно всё удержание.</dd>
+<dt>Частые ошибки</dt><dd><ul><li>Заваливать стопу наружу, на мизинец</li><li>Опускать пятку к концу подхода</li><li>Переносить вес на руки</li><li>Задерживать дыхание</li></ul></dd>
+</dl></details></div></article><article class="ex" data-search="удержание на носке с согнутым коленом удержание на носке с согнутым коленом изометрия для камбаловидной мышцы — она сильнее всего нагружает ахилл при беге. силовая работа ">
+<button class="pic" type="button" data-zoom="img/bent_knee_calf_raise.jpg" aria-label="Увеличить схему: Удержание на носке с согнутым коленом"><img src="img/bent_knee_calf_raise.jpg" alt="Схема: Удержание на носке с согнутым коленом" loading="lazy" width="960" height="540"></button>
+<div class="body"><h3>Удержание на носке с согнутым коленом</h3><p class="cue">Изометрия для камбаловидной мышцы — она сильнее всего нагружает ахилл при беге.</p>
+<details><summary>Как делать</summary><dl>
+<dt>Подготовка</dt><dd>Встаньте на одну ногу у опоры, кончики пальцев на опоре. Согните опорное колено на 30–40° и держите этот угол всё время.</dd>
+<dt>Выполнение</dt><dd>Не разгибая колено, поднимитесь на носок примерно на половину высоты. Держите 30–45 секунд, давя подушечкой стопы в пол. Опуститесь и смените ногу.</dd>
+<dt>Дыхание</dt><dd>Дышите ровно всё удержание.</dd>
+<dt>Частые ошибки</dt><dd><ul><li>Разгибать колено во время удержания</li><li>Заваливать стопу наружу, на мизинец</li><li>Опускать пятку к концу подхода</li><li>Переносить вес на руки</li><li>Задерживать дыхание</li></ul></dd>
 </dl></details></div></article><article class="ex" data-search="ягодичный мост ягодичный мост укрепление ягодичных мышц и контроль таза. силовая работа ">
 <button class="pic" type="button" data-zoom="img/glute_bridge.jpg" aria-label="Увеличить схему: Ягодичный мост"><img src="img/glute_bridge.jpg" alt="Схема: Ягодичный мост" loading="lazy" width="960" height="540"></button>
 <div class="body"><h3>Ягодичный мост</h3><p class="cue">Укрепление ягодичных мышц и контроль таза.</p>
@@ -653,7 +697,7 @@ dialog button{display:block;width:100%;min-height:48px;border:0;background:#173B
 <dialog id="zoom"><img id="zoom-img" alt=""><button type="button" id="zoom-close">Закрыть</button></dialog>
 <script>
 (function(){
-  var views=['w1','w2','w3','w4','all'];
+  var views=['w1','w2','w3','w4','daily','all'];
   var q=document.getElementById('q');
   function show(v){
     views.forEach(function(n){
